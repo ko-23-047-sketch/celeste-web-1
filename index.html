@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS DOOM: Dark Brick Edition</title>
+    <title>JS DOOM: Texture Injected</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         canvas { display: block; image-rendering: pixelated; }
@@ -17,12 +17,11 @@
             flex-direction: column; justify-content: center; align-items: center;
             color: white; text-align: center; z-index: 20;
         }
-        button { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #f00; color: #fff; border: 2px solid #fff; }
     </style>
 </head>
 <body>
     <div id="ui">HP: <span id="hp">100</span>% | LVL: <span id="lvl">1</span> <span id="boss-ui" style="display:none;">| BOSS: <span id="bhp">10</span></span></div>
-    <div id="overlay"><h1 id="status">ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ</button></div>
+    <div id="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ</button></div>
     <canvas id="game"></canvas>
 
 <script>
@@ -34,28 +33,17 @@ const bhpEl = document.getElementById('bhp');
 const bossUi = document.getElementById('boss-ui');
 const overlay = document.getElementById('overlay');
 
-// ЗАГРУЗКА ЕДИНСТВЕННОЙ ТЕКСТУРЫ
+// ВШИТАЯ ТЕКСТУРА КИРПИЧА (Base64)
 const wallTexture = new Image();
-wallTexture.src = 'sprites.png'; 
+wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
+
 let texturesLoaded = false;
 wallTexture.onload = () => { texturesLoaded = true; };
 
-// Настройки баланса (оставлены так же)
-const PLAYER_SPEED = 2.0; 
-const MONSTER_SPEED = 0.7;
-const SENSITIVITY = 0.0015;
-
 const levels = [
-    [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]], // 1
-    [[1,1,1,1,1,1],[1,0,0,0,0,1],[1,0,1,1,0,1],[1,0,0,3,0,1],[1,1,1,1,1,1]], // 2
-    [[1,1,1,1,1,1,1],[1,0,0,1,0,0,1],[1,0,2,0,2,0,1],[1,0,0,0,3,0,1],[1,1,1,1,1,1,1]], // 3
-    [[1,1,1,1,1,1],[1,3,0,0,0,1],[1,1,1,1,0,1],[1,0,0,0,0,1],[1,1,1,1,1,1]], // 4
-    [[1,1,1,1,1,1,1],[1,0,2,0,2,0,1],[1,0,0,0,0,0,1],[1,0,2,0,3,0,1],[1,1,1,1,1,1,1]], // 5
-    [[1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,1],[1,0,1,1,1,1,0,1],[1,0,0,0,3,0,0,1],[1,1,1,1,1,1,1,1]], // 6
-    [[1,1,1,1,1,1,1],[1,0,0,0,0,0,1],[1,0,1,1,1,0,1],[1,3,0,0,0,0,1],[1,1,1,1,1,1,1]], // 7
-    [[1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,1],[1,0,2,2,0,2,2,0,1],[1,0,0,0,3,0,0,0,1],[1,1,1,1,1,1,1,1,1]], // 8
-    [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,1,0,1,0,1,0,0,1],[1,0,0,0,0,0,0,0,3,1],[1,1,1,1,1,1,1,1,1,1]], // 9
-    [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]]  // 10 BOSS
+    [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]],
+    [[1,1,1,1,1,1],[1,0,0,0,0,1],[1,0,1,1,0,1],[1,0,0,3,0,1],[1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]]
 ];
 
 let currentLevel = 0;
@@ -66,49 +54,35 @@ const keys = {};
 
 function spawnEnemies() {
     enemies = [];
-    const isBossLevel = (currentLevel === 9);
-    bossUi.style.display = isBossLevel ? 'inline' : 'none';
-    let count = isBossLevel ? 1 : 2 + currentLevel;
-    
-    for(let i=0; i<count; i++){
-        enemies.push({
-            x: 150 + Math.random()*100, y: 150 + Math.random()*100, 
-            angle: Math.random()*6, speed: isBossLevel ? 1.2 : MONSTER_SPEED, 
-            hp: isBossLevel ? 10 : 1, isBoss: isBossLevel,
-            screenX: 0, dist: 0, isVisible: false
-        });
+    const isBoss = (currentLevel === levels.length-1);
+    bossUi.style.display = isBoss ? 'inline' : 'none';
+    let count = isBoss ? 1 : 3;
+    for(let i=0; i<count; i++) {
+        enemies.push({ x: 150+i*40, y: 150+i*40, angle: Math.random()*6, speed: isBoss ? 1.2 : 0.7, hp: isBoss ? 10 : 1, isBoss: isBoss });
     }
 }
 
 function initLevel(n) {
-    if (n >= levels.length) {
-        document.getElementById('status').innerText = "ПОБЕДА! ЗЛО ПОВЕРЖЕНО!";
-        overlay.style.display = 'flex';
-        player.alive = false;
-        return;
-    }
-    currentLevel = n;
+    currentLevel = n % levels.length;
     map = levels[currentLevel];
     player.x = 96; player.y = 96; player.hp = 100; player.alive = true;
     overlay.style.display = 'none';
-    hpEl.innerText = "100";
     lvlEl.innerText = currentLevel + 1;
-    if(currentLevel === 9) bhpEl.innerText = "10";
+    if(currentLevel === levels.length-1) bhpEl.innerText = "10";
     spawnEnemies();
 }
 
 function resetGame() { initLevel(0); }
-
 window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetGame(); };
 window.onkeyup = (e) => keys[e.code] = false;
 canvas.onclick = () => canvas.requestPointerLock();
-document.onmousemove = (e) => { if(document.pointerLockElement === canvas) player.dir += e.movementX * SENSITIVITY; };
+document.onmousemove = (e) => { if(document.pointerLockElement === canvas) player.dir += e.movementX * 0.0015; };
 
 window.onmousedown = () => {
     if(!player.alive) return;
     player.isFiring = true; player.fireFrame = 5;
     enemies.forEach((en, i) => {
-        if(en.isVisible && Math.abs(en.screenX - canvas.width/2) < (en.isBoss ? 100 : 50)){
+        if(en.isVisible && Math.abs(en.screenX - canvas.width/2) < (en.isBoss ? 100 : 50)) {
             en.hp--;
             if(en.isBoss) bhpEl.innerText = en.hp;
             if(en.hp <= 0) enemies.splice(i, 1);
@@ -118,11 +92,12 @@ window.onmousedown = () => {
 
 function update() {
     if(!player.alive) return;
+    let speed = 2.0;
     let moveX = 0, moveY = 0;
-    if(keys['KeyW']){ moveX += Math.cos(player.dir)*PLAYER_SPEED; moveY += Math.sin(player.dir)*PLAYER_SPEED; }
-    if(keys['KeyS']){ moveX -= Math.cos(player.dir)*PLAYER_SPEED; moveY -= Math.sin(player.dir)*PLAYER_SPEED; }
-    if(keys['KeyA']){ moveX += Math.sin(player.dir)*PLAYER_SPEED; moveY -= Math.cos(player.dir)*PLAYER_SPEED; }
-    if(keys['KeyD']){ moveX -= Math.sin(player.dir)*PLAYER_SPEED; moveY += Math.cos(player.dir)*PLAYER_SPEED; }
+    if(keys['KeyW']){ moveX += Math.cos(player.dir)*speed; moveY += Math.sin(player.dir)*speed; }
+    if(keys['KeyS']){ moveX -= Math.cos(player.dir)*speed; moveY -= Math.sin(player.dir)*speed; }
+    if(keys['KeyA']){ moveX += Math.sin(player.dir)*speed; moveY -= Math.cos(player.dir)*speed; }
+    if(keys['KeyD']){ moveX -= Math.sin(player.dir)*speed; moveY += Math.cos(player.dir)*speed; }
 
     let nx = Math.floor((player.x + moveX)/64), ny = Math.floor((player.y + moveY)/64);
     if(map[ny] && (map[ny][nx] === 0 || map[ny][nx] === 3)){
@@ -137,10 +112,10 @@ function update() {
 
     enemies.forEach(en => {
         let ex = en.x + Math.cos(en.angle)*en.speed, ey = en.y + Math.sin(en.angle)*en.speed;
-        if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += Math.random(); }
+        if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += 1; }
         let d = Math.sqrt((en.x-player.x)**2 + (en.y-player.y)**2);
         if(d < 40){ player.hp -= 0.4; hpEl.innerText = Math.ceil(player.hp); }
-        if(player.hp <= 0){ player.alive = false; overlay.style.display = 'flex'; document.exitPointerLock(); }
+        if(player.hp <= 0){ player.alive = false; overlay.style.display = 'flex'; }
     });
 
     render();
@@ -149,8 +124,8 @@ function update() {
 
 function render() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    ctx.fillStyle = '#050000'; ctx.fillRect(0, 0, canvas.width, canvas.height/2 + player.z);
-    ctx.fillStyle = '#111'; ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2 - player.z);
+    ctx.fillStyle = '#100'; ctx.fillRect(0, 0, canvas.width, canvas.height/2 + player.z);
+    ctx.fillStyle = '#222'; ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2 - player.z);
 
     const fov = Math.PI/3; const numRays = 300; const zBuffer = [];
 
@@ -164,35 +139,21 @@ function render() {
             if(map[ty] && map[ty][tx]) hit = map[ty][tx];
         }
 
-        // ЛОГИКА ТЕКСТУРИРОВАНИЯ
-        let finalDist = dist * Math.cos(angle - player.dir);
-        zBuffer[i] = finalDist;
-        let h = (64 * canvas.height) / finalDist;
-        
-        // Позиция на экране
+        let realDist = dist * Math.cos(angle - player.dir);
+        zBuffer[i] = realDist;
+        let h = (64 * canvas.height) / realDist;
         let screenY = (canvas.height-h)/2 + player.z;
 
         if (hit === 1 && texturesLoaded) {
-            // Вычисляем, какой именно пиксель текстуры брать (от 0 до 63)
             let hitX = (player.x + cx * dist) % 64;
             let hitY = (player.y + sy * dist) % 64;
-            // Упрощенная развертка
-            let textureX = Math.floor(hitX + hitY);
-            if (hitX === 0) textureX = Math.floor(hitY);
-            else if (hitY === 0) textureX = Math.floor(hitX);
-            textureX = textureX % 64;
-
-            // Рисуем одну полоску текстуры
-            ctx.drawImage(wallTexture, textureX, 0, 1, 64, i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
+            let texX = Math.floor(hitX + hitY) % 64;
             
-            // Затемнение от дистанции (накладываем черный слой поверх)
-            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.85, dist/900)})`;
+            ctx.drawImage(wallTexture, texX, 0, 1, 64, i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
+            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.8, dist/800)})`;
             ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
-
         } else {
-            // Фолбэк для выхода (hit=3) или если текстура не загрузилась
-            let c = Math.max(0, 180 - finalDist/5);
-            ctx.fillStyle = hit === 3 ? '#00f' : `rgb(${c},0,0)`;
+            ctx.fillStyle = hit === 3 ? '#00f' : '#300';
             ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
         }
     }
@@ -209,16 +170,14 @@ function render() {
             if(zBuffer[rIdx] > en.dist){
                 en.isVisible = true;
                 ctx.fillStyle = en.isBoss ? '#f0f' : '#0f0';
-                ctx.fillRect(en.screenX-h/4, (canvas.height-h)/2 + player.z + (en.isBoss ? 0 : h/4), h/2, h/2);
+                ctx.fillRect(en.screenX-h/4, (canvas.height-h)/2 + player.z + (en.isBoss?0:h/4), h/2, h/2);
             } else en.isVisible = false;
         } else en.isVisible = false;
     });
 
-    // Оружие и прицел
+    // Оружие
     ctx.fillStyle = '#222';
-    let rec = player.isFiring ? 25 : 0;
-    ctx.fillRect(canvas.width/2-30, canvas.height-160+rec, 60, 180);
-    if(player.isFiring){ ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(canvas.width/2, canvas.height-170, 40, 0, 7); ctx.fill(); }
+    ctx.fillRect(canvas.width/2-30, canvas.height-160+(player.isFiring?20:0), 60, 180);
     ctx.strokeStyle = '#0f0'; ctx.strokeRect(canvas.width/2-10, canvas.height/2-10, 20, 20);
 }
 
