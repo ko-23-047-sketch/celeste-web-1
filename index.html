@@ -2,178 +2,171 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS Doom: High Graphics Edition</title>
+    <title>JS Doom: Levels & Peril</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         canvas { display: block; image-rendering: pixelated; }
         #ui {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            color: #f00; text-shadow: 2px 2px #000; font-size: 24px; text-align: center;
+            color: #f00; text-shadow: 2px 2px #000; font-size: 28px; text-align: center;
             pointer-events: none; width: 100%;
+        }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(139, 0, 0, 0.5); display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            color: white; text-align: center;
+        }
+        button {
+            padding: 15px 30px; font-size: 20px; cursor: pointer;
+            background: #f00; color: white; border: none; font-family: inherit;
         }
     </style>
 </head>
 <body>
-    <div id="ui">HEALTH: 100% | AMMO: ∞<br><small style="color: #555;">CLICK TO CAPTURE MOUSE</small></div>
+    <div id="ui">HEALTH: <span id="hp">100</span>% | LEVEL: <span id="lvl">1</span></div>
+    <div id="overlay" id="deathScreen">
+        <h1>ТЫ ПОГИБ</h1>
+        <button onclick="resetGame()">РЕСТАРТ</button>
+    </div>
     <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const hpEl = document.getElementById('hp');
+const lvlEl = document.getElementById('lvl');
+const overlay = document.getElementById('overlay');
 
-// Настройки
-const SENSITIVITY = 0.0015; // Пониженная сенса
-const JUMP_FORCE = 18;      // Выше прыжок
-const GRAVITY = 0.8;        // Плавное падение
-let isFiring = false;
-let fireFrame = 0;
+// Аудио контекст для звука выстрела
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.onresize = resize;
-resize();
-
-const map = [
-    [1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,1,1,1,0,0,1,1,1,0,1],
-    [1,0,1,0,0,0,0,0,0,1,0,1],
-    [1,0,1,0,0,2,0,0,0,1,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1]
+// Карты уровней (1-стена, 2-колонна, 3-выход)
+const levels = [
+    [
+        [1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,1],
+        [1,0,1,0,1,1,0,1],
+        [1,0,0,0,0,0,3,1],
+        [1,1,1,1,1,1,1,1]
+    ],
+    [
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,1],
+        [1,0,2,0,2,0,2,0,0,1],
+        [1,0,0,0,0,0,0,0,3,1],
+        [1,1,1,1,1,1,1,1,1,1]
+    ]
 ];
 
-const player = { x: 100, y: 100, dir: 0, z: 0, vY: 0, isJumping: false };
-const enemies = [{x: 450, y: 250, hp: 3}, {x: 550, y: 350, hp: 3}];
+let currentLevel = 0;
+let map = levels[currentLevel];
+let player = { x: 100, y: 100, dir: 0, z: 0, vY: 0, hp: 100, alive: true };
+let enemies = [];
 const keys = {};
 
-canvas.onclick = () => canvas.requestPointerLock();
-document.onmousemove = (e) => {
-    if (document.pointerLockElement === canvas) player.dir += e.movementX * SENSITIVITY;
+function initLevel(n) {
+    currentLevel = n;
+    map = levels[currentLevel];
+    player.x = 100; player.y = 100; player.hp = 100;
+    player.alive = true;
+    overlay.style.display = 'none';
+    lvlEl.innerText = n + 1;
+    // Спавним врагов
+    enemies = [{x: 300, y: 150}, {x: 200, y: 200}];
+}
+
+function playShootSound() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+}
+
+// Управление
+canvas.onclick = () => {
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    canvas.requestPointerLock();
 };
-window.onmousedown = () => { if(!isFiring) { isFiring = true; fireFrame = 10; } };
-window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'Space') jump(); };
+window.onmousedown = () => { if(player.alive) playShootSound(); };
+window.onkeydown = (e) => keys[e.code] = true;
 window.onkeyup = (e) => keys[e.code] = false;
+document.onmousemove = (e) => { if (document.pointerLockElement === canvas) player.dir += e.movementX * 0.002; };
 
-function jump() {
-    if (!player.isJumping) {
-        player.vY = JUMP_FORCE;
-        player.isJumping = true;
-    }
-}
-
-function drawWeapon() {
-    const w = canvas.width;
-    const h = canvas.height;
-    const centerX = w / 2;
-    const bobbing = Math.sin(Date.now() * 0.005) * 5;
-    const recoil = isFiring ? fireFrame * 5 : 0;
-
-    // Вспышка выстрела
-    if (isFiring && fireFrame > 7) {
-        ctx.fillStyle = "rgba(255, 255, 200, 0.4)";
-        ctx.beginPath();
-        ctx.arc(centerX, h - 200, 80, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Ствол оружия (простая геометрия кодом)
-    ctx.fillStyle = "#222";
-    ctx.fillRect(centerX - 40, h - 180 + bobbing + recoil, 80, 200);
-    ctx.fillStyle = "#111";
-    ctx.fillRect(centerX - 35, h - 185 + bobbing + recoil, 70, 10); // Верхняя планка
-    
-    if (fireFrame > 0) fireFrame--;
-    else isFiring = false;
-}
-
-function render() {
-    // 1. Фон (Градиент пола и потолка)
-    let ceilGrd = ctx.createLinearGradient(0, 0, 0, canvas.height/2);
-    ceilGrd.addColorStop(0, "#050000");
-    ceilGrd.addColorStop(1, "#200");
-    ctx.fillStyle = ceilGrd;
-    ctx.fillRect(0, 0, canvas.width, canvas.height/2 + player.z);
-
-    let floorGrd = ctx.createLinearGradient(0, canvas.height/2, 0, canvas.height);
-    floorGrd.addColorStop(0, "#111");
-    floorGrd.addColorStop(1, "#400");
-    ctx.fillStyle = floorGrd;
-    ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2 - player.z);
-
-    const numRays = Math.floor(canvas.width / 4); // Оптимизация под ширину
-    const fov = Math.PI / 3;
-    const zBuffer = [];
-
-    // 2. Рендер стен
-    for (let i = 0; i < numRays; i++) {
-        let angle = (player.dir - fov/2) + (i / numRays) * fov;
-        let dist = 0, hit = 0;
-        let cx = Math.cos(angle), sy = Math.sin(angle);
-
-        while (hit === 0 && dist < 1000) {
-            dist += 2;
-            let mx = Math.floor((player.x + cx * dist) / 64);
-            let my = Math.floor((player.y + sy * dist) / 64);
-            if (map[my] && map[my][mx]) hit = map[my][mx];
-        }
-
-        dist *= Math.cos(angle - player.dir);
-        zBuffer[i] = dist;
-
-        let wallH = (64 * canvas.height) / dist;
-        // Освещение зависит от расстояния
-        let brightness = Math.max(0, 255 - (dist / 2));
-        ctx.fillStyle = hit === 2 ? `rgb(0, ${brightness}, ${brightness})` : `rgb(${brightness}, 0, 0)`;
-        ctx.fillRect(i * 4, (canvas.height - wallH)/2 + player.z, 5, wallH);
-    }
-
-    // 3. Враги
-    enemies.forEach(en => {
-        let dx = en.x - player.x, dy = en.y - player.y;
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        let angleToEn = Math.atan2(dy, dx) - player.dir;
-        while (angleToEn < -Math.PI) angleToEn += Math.PI * 2;
-        while (angleToEn > Math.PI) angleToEn -= Math.PI * 2;
-
-        if (Math.abs(angleToEn) < fov) {
-            let sx = (angleToEn / fov + 0.5) * canvas.width;
-            let h = (100 * canvas.height) / dist;
-            let rayIdx = Math.floor((sx / canvas.width) * numRays);
-            if (zBuffer[rayIdx] > dist) {
-                ctx.fillStyle = "#0f0";
-                ctx.fillRect(sx - h/4, (canvas.height - h)/2 + player.z + h/4, h/2, h);
-            }
-        }
-    });
-
-    drawWeapon();
-}
+function resetGame() { initLevel(0); }
 
 function update() {
+    if (!player.alive) return;
+
     let moveX = 0, moveY = 0;
-    const s = 4;
+    const s = 3;
     if (keys['KeyW']) { moveX += Math.cos(player.dir) * s; moveY += Math.sin(player.dir) * s; }
     if (keys['KeyS']) { moveX -= Math.cos(player.dir) * s; moveY -= Math.sin(player.dir) * s; }
     if (keys['KeyA']) { moveX += Math.sin(player.dir) * s; moveY -= Math.cos(player.dir) * s; }
     if (keys['KeyD']) { moveX -= Math.sin(player.dir) * s; moveY += Math.cos(player.dir) * s; }
+    if (keys['Space'] && player.z === 0) player.vY = 15;
 
-    if (map[Math.floor(player.y/64)][Math.floor((player.x + moveX)/64)] === 0) player.x += moveX;
-    if (map[Math.floor((player.y + moveY)/64)][Math.floor(player.x/64)] === 0) player.y += moveY;
+    // Коллизии и проверка выхода
+    let nx = Math.floor((player.x + moveX) / 64);
+    let ny = Math.floor((player.y + moveY) / 64);
+    let tile = map[ny][nx];
 
-    player.z += player.vY;
-    if (player.z > 0 || player.isJumping) {
-        player.vY -= GRAVITY;
-    } else {
-        player.z = 0; player.vY = 0; player.isJumping = false;
+    if (tile === 0 || tile === 3) {
+        player.x += moveX; player.y += moveY;
+        if (tile === 3) { // Переход на уровень
+            if (currentLevel < levels.length - 1) initLevel(currentLevel + 1);
+            else alert("ВСЕ УРОВНИ ПРОЙДЕНЫ!");
+        }
     }
+
+    // Прыжок
+    player.z += player.vY;
+    if (player.z > 0) player.vY -= 0.8; else { player.z = 0; player.vY = 0; }
+
+    // Урон от врагов
+    enemies.forEach(en => {
+        let d = Math.sqrt((en.x-player.x)**2 + (en.y-player.y)**2);
+        if (d < 40) {
+            player.hp -= 0.5;
+            hpEl.innerText = Math.ceil(player.hp);
+            if (player.hp <= 0) { player.alive = false; overlay.style.display = 'flex'; document.exitPointerLock(); }
+        }
+    });
 
     render();
     requestAnimationFrame(update);
 }
 
+function render() {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    // Отрисовка пола/потолка
+    ctx.fillStyle = '#100'; ctx.fillRect(0, 0, canvas.width, canvas.height/2 + player.z);
+    ctx.fillStyle = '#222'; ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2 - player.z);
+
+    const numRays = 300;
+    const fov = Math.PI / 3;
+    for (let i = 0; i < numRays; i++) {
+        let angle = (player.dir - fov/2) + (i / numRays) * fov;
+        let dist = 0, hit = 0;
+        let cx = Math.cos(angle), sy = Math.sin(angle);
+        while (hit === 0 && dist < 800) {
+            dist += 2;
+            let tx = Math.floor((player.x + cx * dist)/64), ty = Math.floor((player.y + sy * dist)/64);
+            if (map[ty] && map[ty][tx]) hit = map[ty][tx];
+        }
+        dist *= Math.cos(angle - player.dir);
+        let h = (64 * canvas.height) / dist;
+        ctx.fillStyle = hit === 1 ? `rgb(${200-dist/4},0,0)` : hit === 3 ? '#00f' : '#555';
+        ctx.fillRect(i * (canvas.width/numRays), (canvas.height-h)/2 + player.z, (canvas.width/numRays)+1, h);
+    }
+}
+
+initLevel(0);
 update();
 </script>
 </body>
