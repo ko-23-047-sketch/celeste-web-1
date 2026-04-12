@@ -2,118 +2,211 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Mini Celeste Clone</title>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS DOOM Clone</title>
     <style>
-        body { margin: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        canvas { border: 4px solid #333; image-rendering: pixelated; }
+        body {
+            margin: 0;
+            background-color: #111;
+            color: #ff0000;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #game-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border: 4px solid #444;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.2);
+        }
+
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* Прицел */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            transform: translate(-50%, -50%);
+        }
+
+        /* Оружие (рисуем через CSS/Div для простоты) */
+        #weapon {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 160px;
+            height: 140px;
+            background: #333;
+            transform: translateX(-50%);
+            border-radius: 40px 40px 0 0;
+            border: 5px solid #111;
+            transition: transform 0.1s;
+        }
+
+        #hud {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 40px;
+            background: #222;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border-top: 2px solid #555;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
+
+<div id="game-container">
+    <canvas id="screen" width="640" height="440"></canvas>
+    <div id="ui-overlay">
+        <div id="crosshair"></div>
+        <div id="weapon"></div>
+        <div id="hud">
+            <div>HEALTH: 100%</div>
+            <div>AMMO: 50</div>
+            <div>SECTOR: 7G</div>
+        </div>
+    </div>
+</div>
+
 <script>
-const config = {
-    type: Phaser.AUTO,
-    width: 400,
-    height: 240, // Низкое разрешение для ретро-эффекта
-    zoom: 3,     // Увеличиваем в 3 раза
-    physics: {
-        default: 'arcade',
-        arcade: { gravity: { y: 900 }, debug: false }
-    },
-    scene: { preload: preload, create: create, update: update }
-};
+    const canvas = document.getElementById('screen');
+    const ctx = canvas.getContext('2d');
+    const weapon = document.getElementById('weapon');
 
-const game = new Phaser.Game(config);
-let player, cursors, platforms;
-let canDash = true;
-let isDashing = false;
+    // Карта: 1 - стена, 0 - пол
+    const map = [
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,0,0,1,1,0,1],
+        [1,0,1,0,0,0,0,1,0,1],
+        [1,0,0,0,0,1,0,0,0,1],
+        [1,0,0,1,1,1,0,0,0,1],
+        [1,0,0,0,0,0,0,1,0,1],
+        [1,1,1,1,1,1,1,1,1,1]
+    ];
 
-function preload() {
-    // РИСУЕМ ПЕРСОНАЖА КОДОМ
-    const canvas = this.textures.createCanvas('player', 8, 8);
-    const ctx = canvas.context;
-    ctx.fillStyle = '#ff0044'; // Красный как волосы Мэдлин
-    ctx.fillRect(0, 0, 8, 8);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(2, 2, 2, 2); ctx.fillRect(5, 2, 2, 2); // Глаза
-    canvas.refresh();
+    const player = {
+        x: 100,
+        y: 100,
+        dir: 0,
+        speed: 0
+    };
 
-    // РИСУЕМ ПЛАТФОРМУ
-    const platCanvas = this.textures.createCanvas('block', 16, 16);
-    const pCtx = platCanvas.context;
-    pCtx.fillStyle = '#29adff';
-    pCtx.fillRect(0, 0, 16, 16);
-    pCtx.strokeStyle = '#004d75';
-    pCtx.strokeRect(0, 0, 16, 16);
-    platCanvas.refresh();
-}
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
 
-function create() {
-    platforms = this.physics.add.staticGroup();
-    // Создаем пол и пару стен
-    for(let i=0; i<25; i++) platforms.create(i*16, 232, 'block');
-    platforms.create(200, 180, 'block');
-    platforms.create(216, 180, 'block');
-    platforms.create(100, 140, 'block');
+    function castRays() {
+        const numRays = 320; // Разрешение по горизонтали
+        const fov = Math.PI / 3;
+        const step = fov / numRays;
 
-    player = this.physics.add.sprite(50, 200, 'player');
-    player.setCollideWorldBounds(true);
-    this.physics.add.collider(player, platforms);
+        // Рисуем небо и пол
+        ctx.fillStyle = '#1a1a1a'; // Потолок
+        ctx.fillRect(0, 0, canvas.width, canvas.height/2);
+        ctx.fillStyle = '#333'; // Пол
+        ctx.fillRect(0, canvas.height/2, canvas.width, canvas.height/2);
 
-    cursors = this.input.keyboard.createCursorKeys();
-    
-    // Клавиша для Дэша (Z или Shift)
-    this.input.keyboard.on('keydown-Z', performDash, this);
-}
+        for (let i = 0; i < numRays; i++) {
+            let rayAngle = (player.dir - fov/2) + (i * step);
+            let distance = 0;
+            let hit = false;
 
-function update() {
-    if (isDashing) return;
+            let cosA = Math.cos(rayAngle);
+            let sinA = Math.sin(rayAngle);
 
-    // Улучшенное управление (Celeste-style)
-    const speed = 140;
-    const accel = player.body.touching.down ? 0.2 : 0.1; // Инерция в воздухе
+            while (!hit && distance < 600) {
+                distance += 1;
+                let tx = Math.floor((player.x + cosA * distance) / 64);
+                let ty = Math.floor((player.y + sinA * distance) / 64);
 
-    if (cursors.left.isDown) {
-        player.setVelocityX(Phaser.Math.Linear(player.body.velocity.x, -speed, accel));
-    } else if (cursors.right.isDown) {
-        player.setVelocityX(Phaser.Math.Linear(player.body.velocity.x, speed, accel));
-    } else {
-        player.setVelocityX(Phaser.Math.Linear(player.body.velocity.x, 0, accel));
+                if (map[ty][tx] === 1) {
+                    hit = true;
+                }
+            }
+
+            // Фикс рыбьего глаза
+            distance *= Math.cos(rayAngle - player.dir);
+
+            // Отрисовка стены
+            let wallHeight = Math.min(canvas.height, (64 * 400) / distance);
+            let shade = Math.min(200, 255 - (distance / 2));
+            
+            // Чередование цвета для эффекта текстуры
+            ctx.fillStyle = `rgb(${shade}, 0, 0)`; 
+            ctx.fillRect(i * 2, (canvas.height - wallHeight) / 2, 2, wallHeight);
+        }
     }
 
-    if (cursors.up.isDown && player.body.touching.down) {
-        player.setVelocityY(-280);
+    function update() {
+        // Поворот
+        if (keys['ArrowLeft']) player.dir -= 0.05;
+        if (keys['ArrowRight']) player.dir += 0.05;
+
+        // Движение
+        let moveX = 0;
+        let moveY = 0;
+        if (keys['ArrowUp']) {
+            moveX = Math.cos(player.dir) * 3;
+            moveY = Math.sin(player.dir) * 3;
+        }
+        if (keys['ArrowDown']) {
+            moveX = -Math.cos(player.dir) * 2;
+            moveY = -Math.sin(player.dir) * 2;
+        }
+
+        // Простая коллизия
+        let nextX = Math.floor((player.x + moveX) / 64);
+        let nextY = Math.floor((player.y + moveY) / 64);
+        if (map[nextY][nextX] === 0) {
+            player.x += moveX;
+            player.y += moveY;
+        }
+
+        // Эффект покачивания оружия
+        if (moveX !== 0 || moveY !== 0) {
+            let bob = Math.sin(Date.now() * 0.01) * 10;
+            weapon.style.transform = `translateX(-50%) translateY(${bob}px)`;
+        }
+
+        castRays();
+        requestAnimationFrame(update);
     }
 
-    // Сброс дэша при касании земли
-    if (player.body.touching.down) {
-        canDash = true;
-        player.setTint(0xffffff); // Обычный цвет
-    }
-}
-
-function performDash() {
-    if (!canDash || isDashing) return;
-
-    canDash = false;
-    isDashing = true;
-    player.setTint(0x00ffff); // Цвет рывка
-    player.body.allowGravity = false;
-
-    // Определяем направление рывка
-    let dirX = cursors.left.isDown ? -1 : (cursors.right.isDown ? 1 : 0);
-    let dirY = cursors.up.isDown ? -1 : (cursors.down.isDown ? 1 : 0);
-    if (dirX === 0 && dirY === 0) dirX = player.flipX ? -1 : 1;
-
-    player.setVelocity(dirX * 400, dirY * 400);
-
-    // Длительность рывка
-    this.time.delayedCall(150, () => {
-        isDashing = false;
-        player.body.allowGravity = true;
-        player.setVelocity(dirX * 150, dirY * 150); // Сохраняем инерцию
+    // Стрельба
+    window.addEventListener('mousedown', () => {
+        weapon.style.bottom = '-20px';
+        setTimeout(() => weapon.style.bottom = '0', 100);
+        // Тут можно добавить звук или искры на стенах
     });
-}
+
+    update();
 </script>
+
 </body>
 </html>
