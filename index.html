@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Mini Celeste Clone</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <style>
+        body { margin: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        canvas { border: 4px solid #333; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+<script>
+const config = {
+    type: Phaser.AUTO,
+    width: 400,
+    height: 240, // Низкое разрешение для ретро-эффекта
+    zoom: 3,     // Увеличиваем в 3 раза
+    physics: {
+        default: 'arcade',
+        arcade: { gravity: { y: 900 }, debug: false }
+    },
+    scene: { preload: preload, create: create, update: update }
+};
+
+const game = new Phaser.Game(config);
+let player, cursors, platforms;
+let canDash = true;
+let isDashing = false;
+
+function preload() {
+    // РИСУЕМ ПЕРСОНАЖА КОДОМ
+    const canvas = this.textures.createCanvas('player', 8, 8);
+    const ctx = canvas.context;
+    ctx.fillStyle = '#ff0044'; // Красный как волосы Мэдлин
+    ctx.fillRect(0, 0, 8, 8);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(2, 2, 2, 2); ctx.fillRect(5, 2, 2, 2); // Глаза
+    canvas.refresh();
+
+    // РИСУЕМ ПЛАТФОРМУ
+    const platCanvas = this.textures.createCanvas('block', 16, 16);
+    const pCtx = platCanvas.context;
+    pCtx.fillStyle = '#29adff';
+    pCtx.fillRect(0, 0, 16, 16);
+    pCtx.strokeStyle = '#004d75';
+    pCtx.strokeRect(0, 0, 16, 16);
+    platCanvas.refresh();
+}
+
+function create() {
+    platforms = this.physics.add.staticGroup();
+    // Создаем пол и пару стен
+    for(let i=0; i<25; i++) platforms.create(i*16, 232, 'block');
+    platforms.create(200, 180, 'block');
+    platforms.create(216, 180, 'block');
+    platforms.create(100, 140, 'block');
+
+    player = this.physics.add.sprite(50, 200, 'player');
+    player.setCollideWorldBounds(true);
+    this.physics.add.collider(player, platforms);
+
+    cursors = this.input.keyboard.createCursorKeys();
+    
+    // Клавиша для Дэша (Z или Shift)
+    this.input.keyboard.on('keydown-Z', performDash, this);
+}
+
+function update() {
+    if (isDashing) return;
+
+    // Улучшенное управление (Celeste-style)
+    const speed = 140;
+    const accel = player.body.touching.down ? 0.2 : 0.1; // Инерция в воздухе
+
+    if (cursors.left.isDown) {
+        player.setVelocityX(Phaser.Math.Linear(player.body.velocity.x, -speed, accel));
+    } else if (cursors.right.isDown) {
+        player.setVelocityX(Phaser.Math.Linear(player.body.velocity.x, speed, accel));
+    } else {
+        player.setVelocityX(Phaser.Math.Linear(player.body.velocity.x, 0, accel));
+    }
+
+    if (cursors.up.isDown && player.body.touching.down) {
+        player.setVelocityY(-280);
+    }
+
+    // Сброс дэша при касании земли
+    if (player.body.touching.down) {
+        canDash = true;
+        player.setTint(0xffffff); // Обычный цвет
+    }
+}
+
+function performDash() {
+    if (!canDash || isDashing) return;
+
+    canDash = false;
+    isDashing = true;
+    player.setTint(0x00ffff); // Цвет рывка
+    player.body.allowGravity = false;
+
+    // Определяем направление рывка
+    let dirX = cursors.left.isDown ? -1 : (cursors.right.isDown ? 1 : 0);
+    let dirY = cursors.up.isDown ? -1 : (cursors.down.isDown ? 1 : 0);
+    if (dirX === 0 && dirY === 0) dirX = player.flipX ? -1 : 1;
+
+    player.setVelocity(dirX * 400, dirY * 400);
+
+    // Длительность рывка
+    this.time.delayedCall(150, () => {
+        isDashing = false;
+        player.body.allowGravity = true;
+        player.setVelocity(dirX * 150, dirY * 150); // Сохраняем инерцию
+    });
+}
+</script>
+</body>
+</html>
