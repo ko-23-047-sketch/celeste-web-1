@@ -2,143 +2,176 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS Doom: Hellfire</title>
+    <title>JS Doom: High Graphics Edition</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; color: red; font-family: sans-serif; }
-        canvas { display: block; margin: auto; cursor: crosshair; border: 2px solid #333; }
-        #msg { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        canvas { display: block; image-rendering: pixelated; }
+        #ui {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            color: #f00; text-shadow: 2px 2px #000; font-size: 24px; text-align: center;
+            pointer-events: none; width: 100%;
+        }
     </style>
 </head>
 <body>
-    <div id="msg">КЛИКНИ, ЧТОБЫ НАЧАТЬ (WASD + MOUSE + SPACE)</div>
+    <div id="ui">HEALTH: 100% | AMMO: ∞<br><small style="color: #555;">CLICK TO CAPTURE MOUSE</small></div>
     <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-canvas.width = 800; canvas.height = 600;
 
-// Карта: 1 - стена, 0 - пусто
+// Настройки
+const SENSITIVITY = 0.0015; // Пониженная сенса
+const JUMP_FORCE = 18;      // Выше прыжок
+const GRAVITY = 0.8;        // Плавное падение
+let isFiring = false;
+let fireFrame = 0;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.onresize = resize;
+resize();
+
 const map = [
-    [1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,0,0,0,1],
-    [1,0,1,0,1,0,1,1,0,1],
-    [1,0,0,0,0,0,0,1,0,1],
-    [1,1,1,0,1,1,0,1,0,1],
-    [1,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1]
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,0,0,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,0,1,0,1],
+    [1,0,1,0,0,2,0,0,0,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
-const player = {
-    x: 120, y: 120, dir: 0, 
-    vY: 0, z: 0, // Для прыжков
-    isJumping: false
-};
-
-const enemies = [
-    {x: 400, y: 300, color: '#0f0'},
-    {x: 500, y: 150, color: '#0f0'}
-];
-
+const player = { x: 100, y: 100, dir: 0, z: 0, vY: 0, isJumping: false };
+const enemies = [{x: 450, y: 250, hp: 3}, {x: 550, y: 350, hp: 3}];
 const keys = {};
-let mouseX = 0;
 
-// Захват мыши
 canvas.onclick = () => canvas.requestPointerLock();
 document.onmousemove = (e) => {
-    if (document.pointerLockElement === canvas) {
-        player.dir += e.movementX * 0.003;
-    }
+    if (document.pointerLockElement === canvas) player.dir += e.movementX * SENSITIVITY;
 };
-
+window.onmousedown = () => { if(!isFiring) { isFiring = true; fireFrame = 10; } };
 window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'Space') jump(); };
 window.onkeyup = (e) => keys[e.code] = false;
 
 function jump() {
     if (!player.isJumping) {
-        player.vY = 15;
+        player.vY = JUMP_FORCE;
         player.isJumping = true;
     }
 }
 
-function update() {
-    // Движение WASD
-    let moveX = 0, moveY = 0;
-    const speed = 3;
-    if (keys['KeyW']) { moveX += Math.cos(player.dir) * speed; moveY += Math.sin(player.dir) * speed; }
-    if (keys['KeyS']) { moveX -= Math.cos(player.dir) * speed; moveY -= Math.sin(player.dir) * speed; }
-    if (keys['KeyA']) { moveX += Math.sin(player.dir) * speed; moveY -= Math.cos(player.dir) * speed; }
-    if (keys['KeyD']) { moveX -= Math.sin(player.dir) * speed; moveY += Math.cos(player.dir) * speed; }
+function drawWeapon() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const centerX = w / 2;
+    const bobbing = Math.sin(Date.now() * 0.005) * 5;
+    const recoil = isFiring ? fireFrame * 5 : 0;
 
-    // Коллизии
-    if (map[Math.floor(player.y/64)][Math.floor((player.x + moveX)/64)] === 0) player.x += moveX;
-    if (map[Math.floor((player.y + moveY)/64)][Math.floor(player.x/64)] === 0) player.y += moveY;
-
-    // Гравитация
-    player.z += player.vY;
-    if (player.z > 0) {
-        player.vY -= 1; // Сила тяжести
-    } else {
-        player.z = 0;
-        player.vY = 0;
-        player.isJumping = false;
+    // Вспышка выстрела
+    if (isFiring && fireFrame > 7) {
+        ctx.fillStyle = "rgba(255, 255, 200, 0.4)";
+        ctx.beginPath();
+        ctx.arc(centerX, h - 200, 80, 0, Math.PI * 2);
+        ctx.fill();
     }
 
-    draw();
-    requestAnimationFrame(update);
+    // Ствол оружия (простая геометрия кодом)
+    ctx.fillStyle = "#222";
+    ctx.fillRect(centerX - 40, h - 180 + bobbing + recoil, 80, 200);
+    ctx.fillStyle = "#111";
+    ctx.fillRect(centerX - 35, h - 185 + bobbing + recoil, 70, 10); // Верхняя планка
+    
+    if (fireFrame > 0) fireFrame--;
+    else isFiring = false;
 }
 
-function draw() {
-    // Небо и пол
-    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#222'; ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2);
+function render() {
+    // 1. Фон (Градиент пола и потолка)
+    let ceilGrd = ctx.createLinearGradient(0, 0, 0, canvas.height/2);
+    ceilGrd.addColorStop(0, "#050000");
+    ceilGrd.addColorStop(1, "#200");
+    ctx.fillStyle = ceilGrd;
+    ctx.fillRect(0, 0, canvas.width, canvas.height/2 + player.z);
 
-    const numRays = 400;
+    let floorGrd = ctx.createLinearGradient(0, canvas.height/2, 0, canvas.height);
+    floorGrd.addColorStop(0, "#111");
+    floorGrd.addColorStop(1, "#400");
+    ctx.fillStyle = floorGrd;
+    ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2 - player.z);
+
+    const numRays = Math.floor(canvas.width / 4); // Оптимизация под ширину
     const fov = Math.PI / 3;
     const zBuffer = [];
 
-    // Рендер стен
+    // 2. Рендер стен
     for (let i = 0; i < numRays; i++) {
         let angle = (player.dir - fov/2) + (i / numRays) * fov;
-        let dist = 0, hit = false;
+        let dist = 0, hit = 0;
         let cx = Math.cos(angle), sy = Math.sin(angle);
 
-        while (!hit && dist < 800) {
+        while (hit === 0 && dist < 1000) {
             dist += 2;
-            if (map[Math.floor((player.y + sy * dist)/64)][Math.floor((player.x + cx * dist)/64)] === 1) hit = true;
+            let mx = Math.floor((player.x + cx * dist) / 64);
+            let my = Math.floor((player.y + sy * dist) / 64);
+            if (map[my] && map[my][mx]) hit = map[my][mx];
         }
 
-        dist *= Math.cos(angle - player.dir); // Фикс линзы
+        dist *= Math.cos(angle - player.dir);
         zBuffer[i] = dist;
 
-        let h = (64 * canvas.height) / dist;
-        let color = 255 - (dist / 3);
-        ctx.fillStyle = `rgb(${color}, 0, 0)`;
-        ctx.fillRect(i * (canvas.width/numRays), (canvas.height - h)/2 + player.z, (canvas.width/numRays) + 1, h);
+        let wallH = (64 * canvas.height) / dist;
+        // Освещение зависит от расстояния
+        let brightness = Math.max(0, 255 - (dist / 2));
+        ctx.fillStyle = hit === 2 ? `rgb(0, ${brightness}, ${brightness})` : `rgb(${brightness}, 0, 0)`;
+        ctx.fillRect(i * 4, (canvas.height - wallH)/2 + player.z, 5, wallH);
     }
 
-    // Рендер врагов (спрайты)
+    // 3. Враги
     enemies.forEach(en => {
         let dx = en.x - player.x, dy = en.y - player.y;
         let dist = Math.sqrt(dx*dx + dy*dy);
         let angleToEn = Math.atan2(dy, dx) - player.dir;
+        while (angleToEn < -Math.PI) angleToEn += Math.PI * 2;
+        while (angleToEn > Math.PI) angleToEn -= Math.PI * 2;
 
-        // Если враг в поле зрения
         if (Math.abs(angleToEn) < fov) {
-            let screenX = (angleToEn / fov + 0.5) * canvas.width;
-            let h = (64 * canvas.height) / dist;
-            
-            // Проверка Z-буфера (чтобы враг не был виден сквозь стены)
-            let rayIdx = Math.floor((screenX / canvas.width) * numRays);
+            let sx = (angleToEn / fov + 0.5) * canvas.width;
+            let h = (100 * canvas.height) / dist;
+            let rayIdx = Math.floor((sx / canvas.width) * numRays);
             if (zBuffer[rayIdx] > dist) {
-                ctx.fillStyle = en.color;
-                ctx.fillRect(screenX - h/4, (canvas.height - h)/2 + player.z + h/2, h/2, h/2);
+                ctx.fillStyle = "#0f0";
+                ctx.fillRect(sx - h/4, (canvas.height - h)/2 + player.z + h/4, h/2, h);
             }
         }
     });
 
-    // Прицел
-    ctx.strokeStyle = '#0f0'; ctx.strokeRect(canvas.width/2 - 5, canvas.height/2 - 5, 10, 10);
+    drawWeapon();
+}
+
+function update() {
+    let moveX = 0, moveY = 0;
+    const s = 4;
+    if (keys['KeyW']) { moveX += Math.cos(player.dir) * s; moveY += Math.sin(player.dir) * s; }
+    if (keys['KeyS']) { moveX -= Math.cos(player.dir) * s; moveY -= Math.sin(player.dir) * s; }
+    if (keys['KeyA']) { moveX += Math.sin(player.dir) * s; moveY -= Math.cos(player.dir) * s; }
+    if (keys['KeyD']) { moveX -= Math.sin(player.dir) * s; moveY += Math.cos(player.dir) * s; }
+
+    if (map[Math.floor(player.y/64)][Math.floor((player.x + moveX)/64)] === 0) player.x += moveX;
+    if (map[Math.floor((player.y + moveY)/64)][Math.floor(player.x/64)] === 0) player.y += moveY;
+
+    player.z += player.vY;
+    if (player.z > 0 || player.isJumping) {
+        player.vY -= GRAVITY;
+    } else {
+        player.z = 0; player.vY = 0; player.isJumping = false;
+    }
+
+    render();
+    requestAnimationFrame(update);
 }
 
 update();
