@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS DOOM: Definitive Edition</title>
+    <title>JS DOOM: Dark Brick Edition</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         canvas { display: block; image-rendering: pixelated; }
@@ -22,7 +22,7 @@
 </head>
 <body>
     <div id="ui">HP: <span id="hp">100</span>% | LVL: <span id="lvl">1</span> <span id="boss-ui" style="display:none;">| BOSS: <span id="bhp">10</span></span></div>
-    <div id="overlay"><h1 id="status">ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ (R)</button></div>
+    <div id="overlay"><h1 id="status">ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ</button></div>
     <canvas id="game"></canvas>
 
 <script>
@@ -34,7 +34,13 @@ const bhpEl = document.getElementById('bhp');
 const bossUi = document.getElementById('boss-ui');
 const overlay = document.getElementById('overlay');
 
-// Настройки баланса (по твоему запросу)
+// ЗАГРУЗКА ЕДИНСТВЕННОЙ ТЕКСТУРЫ
+const wallTexture = new Image();
+wallTexture.src = 'sprites.png'; 
+let texturesLoaded = false;
+wallTexture.onload = () => { texturesLoaded = true; };
+
+// Настройки баланса (оставлены так же)
 const PLAYER_SPEED = 2.0; 
 const MONSTER_SPEED = 0.7;
 const SENSITIVITY = 0.0015;
@@ -54,7 +60,7 @@ const levels = [
 
 let currentLevel = 0;
 let map = levels[currentLevel];
-let player = { x: 90, y: 90, dir: 0, z: 0, vY: 0, hp: 100, alive: true, isFiring: false, fireFrame: 0 };
+let player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, hp: 100, alive: true, isFiring: false, fireFrame: 0 };
 let enemies = [];
 const keys = {};
 
@@ -157,12 +163,38 @@ function render() {
             let tx = Math.floor((player.x + cx*dist)/64), ty = Math.floor((player.y + sy*dist)/64);
             if(map[ty] && map[ty][tx]) hit = map[ty][tx];
         }
-        dist *= Math.cos(angle - player.dir);
-        zBuffer[i] = dist;
-        let h = (64 * canvas.height) / dist;
-        let c = Math.max(0, 180 - dist/5);
-        ctx.fillStyle = hit === 1 ? `rgb(${c},0,0)` : hit === 3 ? '#00f' : '#333';
-        ctx.fillRect(i*(canvas.width/numRays), (canvas.height-h)/2 + player.z, (canvas.width/numRays)+1, h);
+
+        // ЛОГИКА ТЕКСТУРИРОВАНИЯ
+        let finalDist = dist * Math.cos(angle - player.dir);
+        zBuffer[i] = finalDist;
+        let h = (64 * canvas.height) / finalDist;
+        
+        // Позиция на экране
+        let screenY = (canvas.height-h)/2 + player.z;
+
+        if (hit === 1 && texturesLoaded) {
+            // Вычисляем, какой именно пиксель текстуры брать (от 0 до 63)
+            let hitX = (player.x + cx * dist) % 64;
+            let hitY = (player.y + sy * dist) % 64;
+            // Упрощенная развертка
+            let textureX = Math.floor(hitX + hitY);
+            if (hitX === 0) textureX = Math.floor(hitY);
+            else if (hitY === 0) textureX = Math.floor(hitX);
+            textureX = textureX % 64;
+
+            // Рисуем одну полоску текстуры
+            ctx.drawImage(wallTexture, textureX, 0, 1, 64, i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
+            
+            // Затемнение от дистанции (накладываем черный слой поверх)
+            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.85, dist/900)})`;
+            ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
+
+        } else {
+            // Фолбэк для выхода (hit=3) или если текстура не загрузилась
+            let c = Math.max(0, 180 - finalDist/5);
+            ctx.fillStyle = hit === 3 ? '#00f' : `rgb(${c},0,0)`;
+            ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
+        }
     }
 
     enemies.forEach(en => {
