@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS DOOM: Texture Injected</title>
+    <title>JS Doom: Vertical Look & Light Sky</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         canvas { display: block; image-rendering: pixelated; }
@@ -17,11 +17,13 @@
             flex-direction: column; justify-content: center; align-items: center;
             color: white; text-align: center; z-index: 20;
         }
+        #controls-hint { position: absolute; top: 10px; left: 10px; color: #aaa; font-size: 12px; pointer-events: none; }
     </style>
 </head>
 <body>
+    <div id="controls-hint">WASD - Ходить | Mouse - Обзор (360 + Вверх/Вниз) | SPACE - Прыжок</div>
     <div id="ui">HP: <span id="hp">100</span>% | LVL: <span id="lvl">1</span> <span id="boss-ui" style="display:none;">| BOSS: <span id="bhp">10</span></span></div>
-    <div id="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ</button></div>
+    <div id="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="resetGame()" style="padding:10px 20px; cursor:pointer;">РЕСТАРТ (R)</button></div>
     <canvas id="game"></canvas>
 
 <script>
@@ -33,24 +35,27 @@ const bhpEl = document.getElementById('bhp');
 const bossUi = document.getElementById('boss-ui');
 const overlay = document.getElementById('overlay');
 
-// ВШИТАЯ ТЕКСТУРА КИРПИЧА (Base64)
+// ВШИТАЯ ТЕКСТУРА КИРПИЧА
 const wallTexture = new Image();
 wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
-
 let texturesLoaded = false;
 wallTexture.onload = () => { texturesLoaded = true; };
 
 const levels = [
     [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]],
-    [[1,1,1,1,1,1],[1,0,0,0,0,1],[1,0,1,1,0,1],[1,0,0,3,0,1],[1,1,1,1,1,1]],
+    [[1,1,1,1,1,1],[1,0,0,1,0,0,1],[1,0,2,0,2,0,1],[1,1,0,1,3,1,1],[1,1,1,1,1,1,1]],
     [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]]
 ];
 
 let currentLevel = 0;
 let map = levels[currentLevel];
-let player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, hp: 100, alive: true, isFiring: false, fireFrame: 0 };
+// ДОБАВИЛИ: lookOffset - наклон головы, alive - флаг жизни
+let player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, lookOffset: 0, hp: 100, alive: true, isFiring: false, fireFrame: 0 };
 let enemies = [];
 const keys = {};
+
+// Глобальное смещение для рендера (прыжок + обзор)
+let renderOffset = 0;
 
 function spawnEnemies() {
     enemies = [];
@@ -58,14 +63,14 @@ function spawnEnemies() {
     bossUi.style.display = isBoss ? 'inline' : 'none';
     let count = isBoss ? 1 : 3;
     for(let i=0; i<count; i++) {
-        enemies.push({ x: 150+i*40, y: 150+i*40, angle: Math.random()*6, speed: isBoss ? 1.2 : 0.7, hp: isBoss ? 10 : 1, isBoss: isBoss });
+        enemies.push({ x: 150+i*60, y: 150+i*60, angle: Math.random()*6, speed: isBoss ? 1.0 : 0.6, hp: isBoss ? 10 : 1, isBoss: isBoss });
     }
 }
 
 function initLevel(n) {
     currentLevel = n % levels.length;
     map = levels[currentLevel];
-    player.x = 96; player.y = 96; player.hp = 100; player.alive = true;
+    player.x = 96; player.y = 96; player.hp = 100; player.dir = 0; player.lookOffset = 0; player.alive = true;
     overlay.style.display = 'none';
     lvlEl.innerText = currentLevel + 1;
     if(currentLevel === levels.length-1) bhpEl.innerText = "10";
@@ -76,16 +81,36 @@ function resetGame() { initLevel(0); }
 window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetGame(); };
 window.onkeyup = (e) => keys[e.code] = false;
 canvas.onclick = () => canvas.requestPointerLock();
-document.onmousemove = (e) => { if(document.pointerLockElement === canvas) player.dir += e.movementX * 0.0015; };
+
+// Улучшенный обзор (360 + Вертикальный наклон)
+document.onmousemove = (e) => {
+    if(document.pointerLockElement === canvas) {
+        // Поворот по горизонтали (было)
+        player.dir += e.movementX * 0.002;
+        
+        // Поворот по вертикали (НОВОЕ)
+        // Мы смещаем камеру вертикально, ограничивая диапазон
+        player.lookOffset -= e.movementY * 1.5;
+        player.lookOffset = Math.max(-250, Math.min(250, player.lookOffset));
+    }
+};
 
 window.onmousedown = () => {
     if(!player.alive) return;
     player.isFiring = true; player.fireFrame = 5;
     enemies.forEach((en, i) => {
-        if(en.isVisible && Math.abs(en.screenX - canvas.width/2) < (en.isBoss ? 100 : 50)) {
-            en.hp--;
-            if(en.isBoss) bhpEl.innerText = en.hp;
-            if(en.hp <= 0) enemies.splice(i, 1);
+        const halfW = canvas.width / 2;
+        const targetX = en.screenX;
+        // Проверка по горизонтали (прицел)
+        if(en.isVisible && Math.abs(targetX - halfW) < (en.isBoss ? 100 : 50)) {
+            // Проверка по вертикали (прицел теперь зависит от lookOffset)
+            const halfH = canvas.height / 2;
+            const targetY = (canvas.height - en.spriteH)/2 + renderOffset + en.spriteH/(en.isBoss?4:2);
+            if (Math.abs(targetY - halfH) < (en.isBoss ? 120 : 60)) {
+                en.hp--;
+                if(en.isBoss) bhpEl.innerText = en.hp;
+                if(en.hp <= 0) enemies.splice(i, 1);
+            }
         }
     });
 };
@@ -105,17 +130,22 @@ function update() {
         if(map[ny][nx] === 3) initLevel(currentLevel+1);
     }
     
+    // Прыжок работает независимо от обзора
     if(keys['Space'] && player.z === 0) player.vY = 12;
     player.z += player.vY;
     if(player.z > 0) player.vY -= 0.8; else { player.z = 0; player.vY = 0; }
+    
+    // Вычисляем итоговое вертикальное смещение (прыжок + наклон головы)
+    renderOffset = player.lookOffset + player.z;
+
     if(player.fireFrame > 0) player.fireFrame--; else player.isFiring = false;
 
     enemies.forEach(en => {
         let ex = en.x + Math.cos(en.angle)*en.speed, ey = en.y + Math.sin(en.angle)*en.speed;
         if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += 1; }
         let d = Math.sqrt((en.x-player.x)**2 + (en.y-player.y)**2);
-        if(d < 40){ player.hp -= 0.4; hpEl.innerText = Math.ceil(player.hp); }
-        if(player.hp <= 0){ player.alive = false; overlay.style.display = 'flex'; }
+        if(d < 40){ player.hp -= 0.5; hpEl.innerText = Math.ceil(player.hp); }
+        if(player.hp <= 0){ player.alive = false; overlay.style.display = 'flex'; document.exitPointerLock(); }
     });
 
     render();
@@ -124,11 +154,24 @@ function update() {
 
 function render() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    ctx.fillStyle = '#100'; ctx.fillRect(0, 0, canvas.width, canvas.height/2 + player.z);
-    ctx.fillStyle = '#222'; ctx.fillRect(0, canvas.height/2 + player.z, canvas.width, canvas.height/2 - player.z);
+    
+    const hH = canvas.height/2;
+
+    // 1. СВЕТЛОЕ НЕБО (Light Sky)
+    // Рисуем градиент от голубого к чуть более светлому, смещая его
+    let skyGrd = ctx.createLinearGradient(0, 0, 0, hH + renderOffset);
+    skyGrd.addColorStop(0, "#87CEEB"); // SkyBlue
+    skyGrd.addColorStop(1, "#B0E0E6"); // PowderBlue
+    ctx.fillStyle = skyGrd;
+    ctx.fillRect(0, 0, canvas.width, hH + renderOffset);
+    
+    // 2. ПОЛ
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, hH + renderOffset, canvas.width, canvas.height/2 - renderOffset);
 
     const fov = Math.PI/3; const numRays = 300; const zBuffer = [];
 
+    // 3. СТЕНЫ
     for(let i=0; i<numRays; i++){
         let angle = (player.dir - fov/2) + (i/numRays)*fov;
         let dist = 0, hit = 0;
@@ -142,7 +185,8 @@ function render() {
         let realDist = dist * Math.cos(angle - player.dir);
         zBuffer[i] = realDist;
         let h = (64 * canvas.height) / realDist;
-        let screenY = (canvas.height-h)/2 + player.z;
+        // Учитываем renderOffset для стен
+        let screenY = (canvas.height-h)/2 + renderOffset;
 
         if (hit === 1 && texturesLoaded) {
             let hitX = (player.x + cx * dist) % 64;
@@ -150,14 +194,15 @@ function render() {
             let texX = Math.floor(hitX + hitY) % 64;
             
             ctx.drawImage(wallTexture, texX, 0, 1, 64, i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
-            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.8, dist/800)})`;
+            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.8, dist/800)})`; // Shade
             ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
         } else {
-            ctx.fillStyle = hit === 3 ? '#00f' : '#300';
+            ctx.fillStyle = hit === 3 ? '#00f' : `rgb(${100-dist/10}, 0, 0)`; // Fallback/Exit
             ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
         }
     }
 
+    // 4. ВРАГИ (Sprites)
     enemies.forEach(en => {
         let dx = en.x-player.x, dy = en.y-player.y;
         en.dist = Math.sqrt(dx*dx + dy*dy);
@@ -165,22 +210,39 @@ function render() {
         while(a < -Math.PI) a += Math.PI*2; while(a > Math.PI) a -= Math.PI*2;
         if(Math.abs(a) < fov){
             en.screenX = (a/fov + 0.5) * canvas.width;
-            let h = ((en.isBoss ? 280 : 160) * canvas.height)/en.dist;
+            // Учитываем renderOffset для врагов
+            en.spriteH = ((en.isBoss ? 280 : 160) * canvas.height)/en.dist;
+            let screenY = (canvas.height-en.spriteH)/2 + renderOffset + (en.isBoss?0:en.spriteH/4);
             let rIdx = Math.floor((en.screenX/canvas.width)*numRays);
             if(zBuffer[rIdx] > en.dist){
                 en.isVisible = true;
                 ctx.fillStyle = en.isBoss ? '#f0f' : '#0f0';
-                ctx.fillRect(en.screenX-h/4, (canvas.height-h)/2 + player.z + (en.isBoss?0:h/4), h/2, h/2);
+                ctx.fillRect(en.screenX-en.spriteH/4, screenY, en.spriteH/2, en.spriteH/2);
             } else en.isVisible = false;
         } else en.isVisible = false;
     });
 
-    // Оружие
-    ctx.fillStyle = '#222';
-    ctx.fillRect(canvas.width/2-30, canvas.height-160+(player.isFiring?20:0), 60, 180);
+    // 5. ОРУЖИЕ (ЧЕРНЫЙ ПИСТОЛЕТ)
+    ctx.fillStyle = '#000'; // МАТОВЫЙ ЧЕРНЫЙ
+    const gunRecoil = player.isFiring ? 25 : 0;
+    // Пистолет центрирован по горизонтали, но его позиция по Y фиксирована (не зависит от lookOffset)
+    const gunX = canvas.width/2-30;
+    const gunY = canvas.height-160+gunRecoil;
+    ctx.fillRect(gunX, gunY, 60, 180);
+    
+    // Вспышка (если стреляет)
+    if(player.isFiring) {
+        ctx.fillStyle = '#ff0';
+        ctx.beginPath();
+        ctx.arc(gunX + 30, gunY, 30, 0, Math.PI*2);
+        ctx.fill();
+    }
+    
+    // ПРИЦЕЛ (Фиксирован по центру экрана)
     ctx.strokeStyle = '#0f0'; ctx.strokeRect(canvas.width/2-10, canvas.height/2-10, 20, 20);
 }
 
+// ЗАПУСК
 initLevel(0);
 update();
 </script>
