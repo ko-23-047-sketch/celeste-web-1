@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS Doom: Speedrun Edition</title>
+    <title>JS Doom: Firebase Edition</title>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -11,6 +11,7 @@
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         canvas { display: block; image-rendering: pixelated; }
         
+        /* Стили Firebase интерфейса */
         #auth-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
@@ -20,21 +21,21 @@
             position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8);
             padding: 10px; border: 1px solid #f00; font-size: 14px; width: 220px; z-index: 50; color: white;
         }
+
         #ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #f00; text-shadow: 2px 2px #000; font-size: 24px; text-align: center; pointer-events: none; width: 100%; z-index: 10; }
         #timer-ui { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 28px; text-shadow: 2px 2px #000; pointer-events: none; }
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; color: white; text-align: center; z-index: 20; }
         #death-screen { background: rgba(139, 0, 0, 0.8); }
         #win-screen { background: rgba(0, 100, 0, 0.9); border: 10px double #ffd700; box-sizing: border-box; }
         button { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #222; color: #fff; border: 2px solid #fff; margin-top: 20px; }
-        h1 { font-size: 60px; margin: 0; text-shadow: 4px 4px #000; }
     </style>
 </head>
 <body>
 
     <div id="auth-overlay">
-        <h1 style="color:red;">DOOM ONLINE</h1>
+        <h1 style="color:red; font-size: 50px; margin-bottom: 10px;">DOOM ONLINE</h1>
         <button id="login-btn">ВОЙТИ ЧЕРЕЗ GOOGLE</button>
-        <p id="auth-status">Нужна авторизация для игры и рекордов</p>
+        <p>Нужна авторизация для сохранения рекордов</p>
     </div>
 
     <div id="leaderboard">
@@ -48,14 +49,14 @@
     <div id="death-screen" class="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="location.reload()">РЕСТАРТ</button></div>
     <div id="win-screen" class="overlay">
         <h1 style="color: #ffd700;">ПОБЕДА!</h1>
-        <p style="font-size: 24px;">ВРЕМЯ: <span id="final-time"></span></p>
+        <p style="font-size: 24px;">ТВОЕ ВРЕМЯ: <span id="final-time"></span></p>
         <button onclick="location.reload()">ИГРАТЬ СНОВА</button>
     </div>
 
     <canvas id="game"></canvas>
 
 <script>
-// --- FIREBASE CONFIG ---
+// --- КОНФИГУРАЦИЯ FIREBASE ---
 const firebaseConfig = {
     apiKey: "AIzaSyApp_aGExfiyGN8-gaz9LrpcElo0eH2qog",
     authDomain: "doooooooooom-c6131.firebaseapp.com",
@@ -71,109 +72,98 @@ const db = firebase.firestore();
 const provider = new firebase.auth.GoogleAuthProvider();
 
 let currentUser = null;
-let gameActive = false;
-let texturesLoaded = false;
 
-// Логика входа
-document.getElementById('login-btn').onclick = () => {
-    auth.signInWithRedirect(provider);
-};
+// Логика авторизации
+document.getElementById('login-btn').onclick = () => auth.signInWithRedirect(provider);
 
-// Отслеживание состояния входа
-auth.onAuthStateChanged(user => {
-    if (user) {
-        currentUser = user;
-        document.getElementById('auth-overlay').style.display = 'none';
-        loadLeaderboard();
-        if (!gameActive && texturesLoaded) {
-            startGame();
+auth.getRedirectResult().then(() => {
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('auth-overlay').style.display = 'none';
+            loadLeaderboard();
+            initLevel(0);
+            update(); // Запуск игрового цикла
         }
-    } else {
-        document.getElementById('auth-overlay').style.display = 'flex';
-    }
+    });
 });
-
-function startGame() {
-    gameActive = true;
-    initLevel(0);
-    update();
-}
 
 async function saveScore(timeMs, timeStr) {
     if (!currentUser) return;
     try {
         await db.collection("leaderboard").add({
-            name: currentUser.displayName || "Slayer",
+            name: currentUser.displayName || "Anonymous Slayer",
             timeMs: timeMs,
             timeStr: timeStr,
-            date: firebase.firestore.FieldValue.serverTimestamp()
+            date: Date.now()
         });
         loadLeaderboard();
-    } catch (e) { console.error("Save error:", e); }
+    } catch (e) { console.error("Ошибка сохранения:", e); }
 }
 
 async function loadLeaderboard() {
     const list = document.getElementById('scores-list');
-    try {
-        const snapshot = await db.collection("leaderboard").orderBy("timeMs", "asc").limit(5).get();
-        list.innerHTML = snapshot.docs.map((doc, i) => {
-            const data = doc.data();
-            return `<div>${i+1}. ${data.name.split(' ')[0]} - ${data.timeStr}</div>`;
-        }).join('');
-    } catch(e) { 
-        list.innerHTML = "Ошибка доступа (проверь Firestore Rules)"; 
-    }
+    const snapshot = await db.collection("leaderboard").orderBy("timeMs", "asc").limit(5).get();
+    list.innerHTML = snapshot.docs.map((doc, i) => 
+        `<div>${i+1}. ${doc.data().name.split(' ')[0]} - ${doc.data().timeStr}</div>`
+    ).join('');
 }
 
-// --- ENGINE ---
+// --- ДВИЖОК ИГРЫ ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const wallTexture = new Image();
 wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
-wallTexture.onload = () => {
-    texturesLoaded = true;
-    if (currentUser && !gameActive) startGame();
-};
 
 const levels = [
     [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]],
     [[1,1,1,1,1,1],[1,0,0,0,0,1],[1,0,1,1,0,1],[1,0,0,3,0,1],[1,1,1,1,1,1]],
     [[1,1,1,1,1,1,1],[1,0,1,0,1,0,1],[1,0,0,0,0,0,1],[1,1,0,1,3,1,1],[1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1],[1,3,0,0,0,0,1],[1,1,1,1,1,0,1],[1,0,0,0,0,0,1],[1,1,1,1,1,1,1]],
     [[1,1,1,1,1,1,1,1],[1,0,2,0,2,0,0,1],[1,0,0,0,0,0,0,1],[1,0,2,0,3,0,2,1],[1,1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1,1,1],[1,0,0,0,1,0,0,0,1],[1,0,1,0,0,0,1,0,1],[1,0,0,0,3,0,0,0,1],[1,1,1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1],[1,0,0,0,0,0,1],[1,2,0,2,2,2,1],[1,3,0,0,0,0,1],[1,2,0,2,2,2,1],[1,0,0,0,0,0,1],[1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1,1,1],[1,0,0,0,1,0,0,3,1],[1,0,1,0,1,0,1,1,1],[1,0,1,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,0,1],[1,0,1,1,1,1,1,1,1,0,1],[1,3,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1]],
     [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]]
 ];
 
-let currentLevel = 0, map = [], player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, hp: 100, alive: false, lookOffset: 0, isFiring: false }, enemies = [], keys = {}, startTime = 0, renderOffset = 0;
+let currentLevel = 0, map = [], enemies = [], keys = {}, renderOffset = 0;
+let player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, lookOffset: 0, hp: 100, alive: false, isFiring: false, fireFrame: 0 };
+let startTime = 0, gameRunning = false;
 
 function initLevel(n) {
     if (n >= levels.length) {
-        let finalStr = document.getElementById('timer').innerText;
-        document.getElementById('final-time').innerText = finalStr;
+        gameRunning = false;
+        const finalTime = document.getElementById('timer').innerText;
+        const totalMs = Date.now() - startTime;
+        document.getElementById('final-time').innerText = finalTime;
         document.getElementById('win-screen').style.display = 'flex';
         player.alive = false;
-        saveScore(Date.now() - startTime, finalStr);
+        saveScore(totalMs, finalTime);
         document.exitPointerLock();
         return;
     }
-    if (n === 0) startTime = Date.now();
+    if (n === 0) { startTime = Date.now(); gameRunning = true; }
     currentLevel = n;
     map = JSON.parse(JSON.stringify(levels[currentLevel]));
-    player.x = 96; player.y = 96; player.hp = 100; player.alive = true;
+    player.x = 96; player.y = 96; player.hp = 100; player.dir = 0; player.lookOffset = 0; player.alive = true;
     document.getElementById('lvl').innerText = currentLevel + 1;
+    document.getElementById('boss-ui').style.display = (currentLevel === 9) ? 'inline' : 'none';
+    if(currentLevel === 9) document.getElementById('bhp').innerText = "10";
     spawnEnemies();
 }
 
 function spawnEnemies() {
     enemies = [];
-    let isBoss = (currentLevel === levels.length - 1);
-    document.getElementById('boss-ui').style.display = isBoss ? 'inline' : 'none';
-    let count = isBoss ? 1 : 2 + currentLevel;
+    const isBoss = (currentLevel === 9);
+    let count = isBoss ? 1 : 2 + Math.floor(currentLevel / 2);
     for(let i=0; i<count; i++) {
-        enemies.push({ x: 200 + Math.random()*200, y: 200 + Math.random()*200, angle: Math.random()*6, speed: isBoss ? 1.4 : 0.8, hp: isBoss ? 10 : 1, isBoss: isBoss, isVisible: false, screenX: 0 });
+        enemies.push({ x: 160 + Math.random()*150, y: 160 + Math.random()*150, angle: Math.random()*6, speed: isBoss ? 1.3 : 0.7, hp: isBoss ? 10 : 1, isBoss: isBoss, isVisible: false });
     }
 }
 
-window.onkeydown = (e) => keys[e.code] = true;
+window.onkeydown = (e) => { keys[e.code] = true; };
 window.onkeyup = (e) => keys[e.code] = false;
 canvas.onclick = () => { if(player.alive) canvas.requestPointerLock(); };
 
@@ -186,13 +176,13 @@ document.onmousemove = (e) => {
 
 window.onmousedown = () => {
     if(!player.alive) return;
-    player.isFiring = true; setTimeout(() => player.isFiring = false, 100);
+    player.isFiring = true; player.fireFrame = 5;
     enemies.forEach((en, i) => {
         if(en.isVisible && Math.abs(en.screenX - canvas.width/2) < (en.isBoss ? 100 : 50)) {
             en.hp--;
             if(en.isBoss) {
                 document.getElementById('bhp').innerText = en.hp;
-                if(en.hp <= 0) map[4][8] = 3;
+                if (en.hp <= 0) map[4][6] = 3; 
             }
             if(en.hp <= 0) enemies.splice(i, 1);
         }
@@ -202,11 +192,13 @@ window.onmousedown = () => {
 function update() {
     if(!player.alive) { requestAnimationFrame(update); return; }
     
-    let diff = Date.now() - startTime;
-    let m = Math.floor(diff/60000), s = Math.floor((diff%60000)/1000), ms = Math.floor((diff%1000)/10);
-    document.getElementById('timer').innerText = `${m}:${s<10?'0':''}${s}.${ms<10?'0':''}${ms}`;
+    if (gameRunning) {
+        let diff = Date.now() - startTime;
+        let m = Math.floor(diff / 60000), s = Math.floor((diff % 60000) / 1000), ms = Math.floor((diff % 1000) / 10);
+        document.getElementById('timer').innerText = `${m<10?'0':''}${m}:${s<10?'0':''}${s}.${ms<10?'0':''}${ms}`;
+    }
 
-    let speed = 2.4;
+    let speed = 2.3;
     let moveX = 0, moveY = 0;
     if(keys['KeyW']){ moveX += Math.cos(player.dir)*speed; moveY += Math.sin(player.dir)*speed; }
     if(keys['KeyS']){ moveX -= Math.cos(player.dir)*speed; moveY -= Math.sin(player.dir)*speed; }
@@ -224,11 +216,13 @@ function update() {
     if(player.z > 0) player.vY -= 0.8; else { player.z = 0; player.vY = 0; }
     renderOffset = player.lookOffset + player.z;
 
+    if(player.fireFrame > 0) player.fireFrame--; else player.isFiring = false;
+
     enemies.forEach(en => {
         let ex = en.x + Math.cos(en.angle)*en.speed, ey = en.y + Math.sin(en.angle)*en.speed;
-        if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += 1; }
+        if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += 1.2; }
         if(Math.sqrt((en.x-player.x)**2 + (en.y-player.y)**2) < 45){
-            player.hp -= 0.3; document.getElementById('hp').innerText = Math.ceil(player.hp);
+            player.hp -= 0.4; document.getElementById('hp').innerText = Math.ceil(player.hp);
             if(player.hp <= 0){ player.alive = false; document.getElementById('death-screen').style.display = 'flex'; document.exitPointerLock(); }
         }
     });
@@ -240,50 +234,57 @@ function update() {
 function render() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     const hH = canvas.height/2;
-    ctx.fillStyle = "#87CEEB"; ctx.fillRect(0, 0, canvas.width, hH + renderOffset);
-    ctx.fillStyle = '#111'; ctx.fillRect(0, hH + renderOffset, canvas.width, canvas.height);
 
-    const fov = Math.PI/3, numRays = 300, zBuffer = [];
+    ctx.fillStyle = "#87CEEB"; ctx.fillRect(0, 0, canvas.width, hH + renderOffset);
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, hH + renderOffset, canvas.width, canvas.height);
+
+    const fov = Math.PI/3; const numRays = 300; const zBuffer = [];
+
     for(let i=0; i<numRays; i++){
         let angle = (player.dir - fov/2) + (i/numRays)*fov;
         let dist = 0, hit = 0, cx = Math.cos(angle), sy = Math.sin(angle);
-        while(hit === 0 && dist < 1100){
-            dist += 2;
+        while(hit === 0 && dist < 1200){
+            dist += 4;
             let tx = Math.floor((player.x + cx*dist)/64), ty = Math.floor((player.y + sy*dist)/64);
             if(map[ty] && map[ty][tx]) hit = map[ty][tx];
         }
-        let d = dist * Math.cos(angle - player.dir);
-        zBuffer[i] = d;
-        let h = (64 * canvas.height) / d;
-        let sY = (canvas.height-h)/2 + renderOffset;
-        if(hit === 1) {
-            ctx.drawImage(wallTexture, (player.x+cx*dist+player.y+sy*dist)%64, 0, 1, 64, i*(canvas.width/numRays), sY, (canvas.width/numRays)+1, h);
-            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, d/1000)})`;
-            ctx.fillRect(i*(canvas.width/numRays), sY, (canvas.width/numRays)+1, h);
+
+        let realDist = dist * Math.cos(angle - player.dir);
+        zBuffer[i] = realDist;
+        let h = (64 * canvas.height) / realDist;
+        let screenY = (canvas.height-h)/2 + renderOffset;
+
+        if (hit === 1) {
+            let hitX = (player.x + cx * dist) % 64;
+            let hitY = (player.y + sy * dist) % 64;
+            ctx.drawImage(wallTexture, Math.floor(hitX + hitY) % 64, 0, 1, 64, i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
+            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.8, dist/800)})`;
+            ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
         } else {
             ctx.fillStyle = hit === 3 ? '#00f' : (hit === 2 ? '#f80' : '#500');
-            ctx.fillRect(i*(canvas.width/numRays), sY, (canvas.width/numRays)+1, h);
+            ctx.fillRect(i*(canvas.width/numRays), screenY, (canvas.width/numRays)+1, h);
         }
     }
 
     enemies.forEach(en => {
-        let dx = en.x-player.x, dy = en.y-player.y, d = Math.sqrt(dx*dx+dy*dy);
+        let dx = en.x-player.x, dy = en.y-player.y, d = Math.sqrt(dx*dx + dy*dy);
         let a = Math.atan2(dy, dx) - player.dir;
         while(a < -Math.PI) a += Math.PI*2; while(a > Math.PI) a -= Math.PI*2;
         if(Math.abs(a) < fov){
             en.screenX = (a/fov + 0.5) * canvas.width;
-            let sH = ((en.isBoss ? 300 : 180) * canvas.height)/d;
-            let rIdx = Math.floor(en.screenX/canvas.width*numRays);
+            let sprH = ((en.isBoss ? 300 : 180) * canvas.height)/d;
+            let rIdx = Math.floor((en.screenX/canvas.width)*numRays);
             if(zBuffer[rIdx] > d){
                 en.isVisible = true;
-                ctx.fillStyle = en.isBoss ? '#80f' : '#0f0';
-                ctx.fillRect(en.screenX-sH/4, (canvas.height-sH)/2 + renderOffset + (en.isBoss?0:sH/4), sH/2, sH/2);
+                ctx.fillStyle = en.isBoss ? '#800080' : '#00ff00';
+                ctx.fillRect(en.screenX-sprH/4, (canvas.height-sprH)/2 + renderOffset + (en.isBoss?0:sprH/4), sprH/2, sprH/2);
             } else en.isVisible = false;
         } else en.isVisible = false;
     });
 
-    const gunY = canvas.height - 160 + (player.isFiring?20:0);
+    const gunY = canvas.height - 160 + (player.isFiring ? 25 : 0);
     ctx.fillStyle = '#000'; ctx.fillRect(canvas.width/2-30, gunY, 60, 180);
+    if(player.isFiring) { ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(canvas.width/2, gunY, 35, 0, 7); ctx.fill(); }
     ctx.strokeStyle = '#0f0'; ctx.strokeRect(canvas.width/2-10, canvas.height/2-10, 20, 20);
 }
 </script>
