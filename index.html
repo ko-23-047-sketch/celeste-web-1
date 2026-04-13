@@ -11,7 +11,6 @@
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         canvas { display: block; image-rendering: pixelated; }
         
-        /* Стили UI и Firebase */
         #auth-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
@@ -35,7 +34,7 @@
     <div id="auth-overlay">
         <h1 style="color:red;">DOOM ONLINE</h1>
         <button id="login-btn">ВОЙТИ ЧЕРЕЗ GOOGLE</button>
-        <p>Нужна авторизация для игры и рекордов</p>
+        <p id="auth-status">Нужна авторизация для игры и рекордов</p>
     </div>
 
     <div id="leaderboard">
@@ -56,7 +55,7 @@
     <canvas id="game"></canvas>
 
 <script>
-// --- КОНФИГУРАЦИЯ FIREBASE ---
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyApp_aGExfiyGN8-gaz9LrpcElo0eH2qog",
     authDomain: "doooooooooom-c6131.firebaseapp.com",
@@ -73,18 +72,32 @@ const provider = new firebase.auth.GoogleAuthProvider();
 
 let currentUser = null;
 let gameActive = false;
+let texturesLoaded = false;
 
-// Вход через Redirect для GitHub Pages
-document.getElementById('login-btn').onclick = () => auth.signInWithRedirect(provider);
+// Логика входа
+document.getElementById('login-btn').onclick = () => {
+    auth.signInWithRedirect(provider);
+};
 
+// Отслеживание состояния входа
 auth.onAuthStateChanged(user => {
     if (user) {
         currentUser = user;
         document.getElementById('auth-overlay').style.display = 'none';
         loadLeaderboard();
-        if (!gameActive) { gameActive = true; initLevel(0); update(); }
+        if (!gameActive && texturesLoaded) {
+            startGame();
+        }
+    } else {
+        document.getElementById('auth-overlay').style.display = 'flex';
     }
 });
+
+function startGame() {
+    gameActive = true;
+    initLevel(0);
+    update();
+}
 
 async function saveScore(timeMs, timeStr) {
     if (!currentUser) return;
@@ -93,25 +106,34 @@ async function saveScore(timeMs, timeStr) {
             name: currentUser.displayName || "Slayer",
             timeMs: timeMs,
             timeStr: timeStr,
-            date: Date.now()
+            date: firebase.firestore.FieldValue.serverTimestamp()
         });
         loadLeaderboard();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Save error:", e); }
 }
 
 async function loadLeaderboard() {
     const list = document.getElementById('scores-list');
     try {
         const snapshot = await db.collection("leaderboard").orderBy("timeMs", "asc").limit(5).get();
-        list.innerHTML = snapshot.docs.map((doc, i) => `<div>${i+1}. ${doc.data().name.split(' ')[0]} - ${doc.data().timeStr}</div>`).join('');
-    } catch(e) { list.innerHTML = "Ошибка загрузки"; }
+        list.innerHTML = snapshot.docs.map((doc, i) => {
+            const data = doc.data();
+            return `<div>${i+1}. ${data.name.split(' ')[0]} - ${data.timeStr}</div>`;
+        }).join('');
+    } catch(e) { 
+        list.innerHTML = "Ошибка доступа (проверь Firestore Rules)"; 
+    }
 }
 
-// --- ДВИЖОК ---
+// --- ENGINE ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const wallTexture = new Image();
 wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
+wallTexture.onload = () => {
+    texturesLoaded = true;
+    if (currentUser && !gameActive) startGame();
+};
 
 const levels = [
     [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]],
@@ -230,7 +252,6 @@ function render() {
             let tx = Math.floor((player.x + cx*dist)/64), ty = Math.floor((player.y + sy*dist)/64);
             if(map[ty] && map[ty][tx]) hit = map[ty][tx];
         }
-        // Исправленная дистанция (убираем эффект ромба)
         let d = dist * Math.cos(angle - player.dir);
         zBuffer[i] = d;
         let h = (64 * canvas.height) / d;
