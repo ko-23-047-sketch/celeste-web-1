@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS Doom: Firebase Edition</title>
+    <title>JS Doom: Firebase Online</title>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -11,46 +11,45 @@
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: white; }
         canvas { display: block; image-rendering: pixelated; }
         
-        /* Интерфейс логина */
         #auth-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+            background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
             justify-content: center; align-items: center; z-index: 100;
         }
 
-        /* Таблица рекордов */
         #leaderboard {
-            position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7);
-            padding: 10px; border: 1px solid #f00; font-size: 14px; max-width: 200px;
+            position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8);
+            padding: 10px; border: 1px solid #f00; font-size: 14px; width: 220px; z-index: 50;
         }
 
-        #ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 24px; pointer-events: none; text-align: center;}
-        #timer-ui { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 28px; }
+        #ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 24px; pointer-events: none; text-align: center; text-shadow: 2px 2px #000;}
+        #timer-ui { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 28px; text-shadow: 2px 2px #000;}
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 20; }
         #death-screen { background: rgba(139, 0, 0, 0.8); }
         #win-screen { background: rgba(0, 100, 0, 0.9); }
-        button { padding: 10px 20px; cursor: pointer; background: #333; color: #fff; border: 2px solid #fff; margin: 10px; }
+        button { padding: 15px 30px; cursor: pointer; background: #333; color: #fff; border: 2px solid #fff; margin: 10px; font-size: 18px; font-family: inherit; }
+        button:hover { background: #555; }
     </style>
 </head>
 <body>
 
     <div id="auth-overlay">
-        <h1>JS DOOM: ONLINE</h1>
+        <h1 style="font-size: 50px; color: #f00;">JS DOOM: ONLINE</h1>
         <button id="login-btn">ВОЙТИ ЧЕРЕЗ GOOGLE</button>
-        <p>Нужен вход для сохранения рекордов</p>
+        <p>Авторизуйтесь, чтобы попасть в таблицу рекордов</p>
     </div>
 
     <div id="leaderboard">
-        <b style="color: #ffd700;">РЕКОРДЫ (TOP 5):</b>
+        <b style="color: #ffd700;">TOP 5 SPEEDRUNNERS:</b>
         <div id="scores-list">Загрузка...</div>
     </div>
 
     <div id="timer-ui">TIME: <span id="timer">00:00.00</span></div>
     <div id="ui">HP: <span id="hp">100</span>% | LVL: <span id="lvl">1</span> <span id="boss-ui" style="display:none;">| BOSS: <span id="bhp">10</span></span></div>
     
-    <div id="death-screen" class="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ</button></div>
+    <div id="death-screen" class="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ (R)</button></div>
     <div id="win-screen" class="overlay">
-        <h1 style="color: #ffd700;">ПОБЕДА!</h1>
+        <h1 style="color: #ffd700;">МИССИЯ ВЫПОЛНЕНА!</h1>
         <p>ТВОЕ ВРЕМЯ: <span id="final-time"></span></p>
         <button onclick="resetGame()">ИГРАТЬ СНОВА</button>
     </div>
@@ -59,15 +58,14 @@
 
 <script>
 // --- КОНФИГУРАЦИЯ FIREBASE ---
-// ВСТАВЬ СВОИ ДАННЫЕ ИЗ КОНСОЛИ FIREBASE ТУТ:
 const firebaseConfig = {
     apiKey: "AIzaSyApp_aGExfiyGN8-gaz9LrpcElo0eH2qog",
-  authDomain: "doooooooooom-c6131.firebaseapp.com",
-  projectId: "doooooooooom-c6131",
-  storageBucket: "doooooooooom-c6131.firebasestorage.app",
-  messagingSenderId: "444272360243",
-  appId: "1:444272360243:web:07890e04d15631e9e1dc46",
-  measurementId: "G-W7FM27DQB6"
+    authDomain: "doooooooooom-c6131.firebaseapp.com",
+    projectId: "doooooooooom-c6131",
+    storageBucket: "doooooooooom-c6131.firebasestorage.app",
+    messagingSenderId: "444272360243",
+    appId: "1:444272360243:web:07890e04d15631e9e1dc46",
+    measurementId: "G-W7FM27DQB6"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -77,91 +75,216 @@ const provider = new firebase.auth.GoogleAuthProvider();
 
 let currentUser = null;
 
-// Логика входа
+// Вход
 document.getElementById('login-btn').onclick = () => {
     auth.signInWithPopup(provider).then(result => {
         currentUser = result.user;
         document.getElementById('auth-overlay').style.display = 'none';
-        initLevel(0);
         loadLeaderboard();
-    }).catch(error => console.error(error));
+        initLevel(0);
+    }).catch(e => {
+        console.error(e);
+        alert("Ошибка входа! Попробуйте запустить через Live Server.");
+    });
 };
 
-// Функция сохранения рекорда
 async function saveScore(timeMs, timeStr) {
     if (!currentUser) return;
     try {
         await db.collection("leaderboard").add({
-            name: currentUser.displayName,
+            name: currentUser.displayName || "Anonymous",
             timeMs: timeMs,
             timeStr: timeStr,
             date: Date.now()
         });
         loadLeaderboard();
-    } catch (e) { console.error("Ошибка сохранения: ", e); }
+    } catch (e) { console.error(e); }
 }
 
-// Загрузка таблицы
 async function loadLeaderboard() {
     const list = document.getElementById('scores-list');
-    const snapshot = await db.collection("leaderboard")
-        .orderBy("timeMs", "asc")
-        .limit(5)
-        .get();
-    
-    list.innerHTML = snapshot.docs.map((doc, i) => 
-        `<div>${i+1}. ${doc.data().name} - ${doc.data().timeStr}</div>`
-    ).join('');
+    try {
+        const snapshot = await db.collection("leaderboard").orderBy("timeMs", "asc").limit(5).get();
+        list.innerHTML = snapshot.docs.map((doc, i) => 
+            `<div>${i+1}. ${doc.data().name.split(' ')[0]} - ${doc.data().timeStr}</div>`
+        ).join('');
+    } catch (e) { list.innerHTML = "Ошибка загрузки"; }
 }
 
-// --- ОСНОВНОЙ КОД ИГРЫ (УПРОЩЕННО ДЛЯ ПРИМЕРА) ---
+// --- ДВИЖОК ИГРЫ ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const hpEl = document.getElementById('hp'), lvlEl = document.getElementById('lvl'), bhpEl = document.getElementById('bhp');
-const timerEl = document.getElementById('timer'), finalTimeEl = document.getElementById('final-time');
-const deathScreen = document.getElementById('death-screen'), winScreen = document.getElementById('win-screen');
+const levels = [
+    [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]],
+    [[1,1,1,1,1,1],[1,0,0,0,0,1],[1,0,1,1,0,1],[1,0,0,3,0,1],[1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1],[1,0,1,0,1,0,1],[1,0,0,0,0,0,1],[1,1,0,1,3,1,1],[1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1,1],[1,0,2,0,2,0,0,1],[1,0,0,0,0,0,0,1],[1,0,2,0,3,0,2,1],[1,1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1],[1,0,0,0,0,0,1],[1,2,0,2,2,2,1],[1,3,0,0,0,0,1],[1,2,0,2,2,2,1],[1,0,0,0,0,0,1],[1,1,1,1,1,1,1]], // LVL 7
+    [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]] // Boss
+];
+
+let currentLevel = 0, map = [], player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, hp: 100, alive: false, lookOffset: 0, isFiring: false };
+let enemies = [], keys = {}, startTime = 0, gameRunning = false;
 
 const wallTexture = new Image();
 wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
 
-let currentLevel = 0, map = [], player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, hp: 100, alive: false };
-let startTime = 0, gameRunning = false;
-
-// (Здесь должны быть твои уровни, функция spawnEnemies и render из предыдущего кода)
-// Для экономии места я пропущу массив уровней, используй свой прошлый вариант.
+function spawnEnemies() {
+    enemies = [];
+    const isBoss = (currentLevel === levels.length - 1);
+    document.getElementById('boss-ui').style.display = isBoss ? 'inline' : 'none';
+    let count = isBoss ? 1 : 2 + currentLevel;
+    for(let i=0; i<count; i++) {
+        enemies.push({ 
+            x: 200 + Math.random()*200, y: 200 + Math.random()*200, 
+            angle: Math.random()*6, speed: isBoss ? 1.4 : 0.8, 
+            hp: isBoss ? 10 : 1, isBoss: isBoss, isVisible: false, screenX: 0
+        });
+    }
+}
 
 function initLevel(n) {
-    if (n >= 10) { // Конец игры
+    if (n >= levels.length) {
         gameRunning = false;
         const totalMs = Date.now() - startTime;
-        const totalStr = timerEl.innerText;
-        finalTimeEl.innerText = totalStr;
-        winScreen.style.display = 'flex';
+        document.getElementById('final-time').innerText = document.getElementById('timer').innerText;
+        document.getElementById('win-screen').style.display = 'flex';
         player.alive = false;
-        saveScore(totalMs, totalStr); // СОХРАНЯЕМ В ОБЛАКО
+        saveScore(totalMs, document.getElementById('timer').innerText);
+        document.exitPointerLock();
         return;
     }
     if (n === 0) { startTime = Date.now(); gameRunning = true; }
-    // ... остальная логика initLevel из твоего кода ...
-    player.alive = true;
     currentLevel = n;
-    lvlEl.innerText = n + 1;
+    map = JSON.parse(JSON.stringify(levels[currentLevel]));
+    player.x = 96; player.y = 96; player.hp = 100; player.alive = true;
+    document.getElementById('death-screen').style.display = 'none';
+    document.getElementById('lvl').innerText = currentLevel + 1;
+    if(currentLevel === levels.length - 1) document.getElementById('bhp').innerText = "10";
+    spawnEnemies();
 }
 
-// Заглушка для цикла (вставь сюда свой полный update и render)
-function gameLoop() {
-    if(player.alive) {
-        // Твой расчет лучей, управления и отрисовка
-        if (gameRunning) {
-            let diff = Date.now() - startTime;
-            let m = Math.floor(diff/60000), s = Math.floor((diff%60000)/1000), ms = Math.floor((diff%1000)/10);
-            timerEl.innerText = `${m}:${s<10?'0':''}${s}.${ms<10?'0':''}${ms}`;
+function resetGame() { initLevel(0); }
+
+window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetGame(); };
+window.onkeyup = (e) => keys[e.code] = false;
+canvas.onclick = () => { if(player.alive) canvas.requestPointerLock(); };
+
+document.onmousemove = (e) => {
+    if(document.pointerLockElement === canvas) {
+        player.dir += e.movementX * 0.002;
+        player.lookOffset = Math.max(-300, Math.min(300, player.lookOffset - e.movementY * 1.5));
+    }
+};
+
+window.onmousedown = () => {
+    if(!player.alive) return;
+    player.isFiring = true;
+    setTimeout(() => player.isFiring = false, 100);
+    enemies.forEach((en, i) => {
+        if(en.isVisible && Math.abs(en.screenX - canvas.width/2) < (en.isBoss ? 100 : 50)) {
+            en.hp--;
+            if(en.isBoss) {
+                document.getElementById('bhp').innerText = en.hp;
+                if(en.hp <= 0) map[4][8] = 3; // Портал появляется
+            }
+            if(en.hp <= 0) enemies.splice(i, 1);
+        }
+    });
+};
+
+function update() {
+    if(!player.alive) return;
+    
+    // Таймер
+    let diff = Date.now() - startTime;
+    let m = Math.floor(diff/60000), s = Math.floor((diff%60000)/1000), ms = Math.floor((diff%1000)/10);
+    document.getElementById('timer').innerText = `${m}:${s<10?'0':''}${s}.${ms<10?'0':''}${ms}`;
+
+    // Движение
+    let moveX = 0, moveY = 0, speed = 2.5;
+    if(keys['KeyW']){ moveX += Math.cos(player.dir)*speed; moveY += Math.sin(player.dir)*speed; }
+    if(keys['KeyS']){ moveX -= Math.cos(player.dir)*speed; moveY -= Math.sin(player.dir)*speed; }
+    if(keys['KeyA']){ moveX += Math.sin(player.dir)*speed; moveY -= Math.cos(player.dir)*speed; }
+    if(keys['KeyD']){ moveX -= Math.sin(player.dir)*speed; moveY += Math.cos(player.dir)*speed; }
+
+    let nx = Math.floor((player.x + moveX)/64), ny = Math.floor((player.y + moveY)/64);
+    if(map[ny] && (map[ny][nx] === 0 || map[ny][nx] === 3)){
+        player.x += moveX; player.y += moveY;
+        if(map[ny][nx] === 3) initLevel(currentLevel+1);
+    }
+    
+    if(keys['Space'] && player.z === 0) player.vY = 12;
+    player.z += player.vY;
+    if(player.z > 0) player.vY -= 0.8; else { player.z = 0; player.vY = 0; }
+    let renderOffset = player.lookOffset + player.z;
+
+    enemies.forEach(en => {
+        let ex = en.x + Math.cos(en.angle)*en.speed, ey = en.y + Math.sin(en.angle)*en.speed;
+        if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += 1; }
+        if(Math.sqrt((en.x-player.x)**2 + (en.y-player.y)**2) < 40){
+            player.hp -= 0.5; document.getElementById('hp').innerText = Math.ceil(player.hp);
+            if(player.hp <= 0){ player.alive = false; document.getElementById('death-screen').style.display = 'flex'; document.exitPointerLock(); }
+        }
+    });
+
+    render(renderOffset);
+    requestAnimationFrame(update);
+}
+
+function render(renderOffset) {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    const hH = canvas.height/2;
+
+    // Небо и пол
+    ctx.fillStyle = "#87CEEB"; ctx.fillRect(0, 0, canvas.width, hH + renderOffset);
+    ctx.fillStyle = '#111'; ctx.fillRect(0, hH + renderOffset, canvas.width, canvas.height);
+
+    const fov = Math.PI/3, numRays = 300, zBuffer = [];
+    for(let i=0; i<numRays; i++){
+        let angle = (player.dir - fov/2) + (i/numRays)*fov;
+        let dist = 0, hit = 0, cx = Math.cos(angle), sy = Math.sin(angle);
+        while(hit === 0 && dist < 1000){
+            dist += 4;
+            let tx = Math.floor((player.x + cx*dist)/64), ty = Math.floor((player.y + sy*dist)/64);
+            if(map[ty] && map[ty][tx]) hit = map[ty][tx];
+        }
+        let d = dist * Math.cos(angle - player.dir);
+        zBuffer[i] = d;
+        let h = (64 * canvas.height) / d;
+        let sY = (canvas.height-h)/2 + renderOffset;
+        if(hit === 1) {
+            ctx.drawImage(wallTexture, (player.x+cx*dist+player.y+sy*dist)%64, 0, 1, 64, i*(canvas.width/numRays), sY, (canvas.width/numRays)+1, h);
+        } else {
+            ctx.fillStyle = hit === 3 ? '#00f' : (hit === 2 ? '#f80' : '#500');
+            ctx.fillRect(i*(canvas.width/numRays), sY, (canvas.width/numRays)+1, h);
         }
     }
-    requestAnimationFrame(gameLoop);
-}
-gameLoop();
 
+    enemies.forEach(en => {
+        let dx = en.x-player.x, dy = en.y-player.y, d = Math.sqrt(dx*dx+dy*dy);
+        let a = Math.atan2(dy, dx) - player.dir;
+        while(a < -Math.PI) a += Math.PI*2; while(a > Math.PI) a -= Math.PI*2;
+        if(Math.abs(a) < fov){
+            en.screenX = (a/fov + 0.5) * canvas.width;
+            let sH = ((en.isBoss ? 300 : 180) * canvas.height)/d;
+            let rIdx = Math.floor(en.screenX/canvas.width*numRays);
+            if(zBuffer[rIdx] > d){
+                en.isVisible = true;
+                ctx.fillStyle = en.isBoss ? '#80f' : '#0f0';
+                ctx.fillRect(en.screenX-sH/4, (canvas.height-sH)/2 + renderOffset + (en.isBoss?0:sH/4), sH/2, sH/2);
+            } else en.isVisible = false;
+        } else en.isVisible = false;
+    });
+
+    // Оружие
+    ctx.fillStyle = '#000';
+    ctx.fillRect(canvas.width/2-30, canvas.height-160+(player.isFiring?20:0), 60, 180);
+    ctx.strokeStyle = '#0f0'; ctx.strokeRect(canvas.width/2-10, canvas.height/2-10, 20, 20);
+}
+
+// Запуск цикла
+update();
 </script>
 </body>
 </html>
