@@ -2,41 +2,36 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>JS Doom: Firebase Online</title>
+    <title>JS Doom: Firebase Edition</title>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: white; }
         canvas { display: block; image-rendering: pixelated; }
-        
         #auth-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
+            background: #000; display: flex; flex-direction: column;
             justify-content: center; align-items: center; z-index: 100;
         }
-
         #leaderboard {
             position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8);
             padding: 10px; border: 1px solid #f00; font-size: 14px; width: 220px; z-index: 50;
         }
-
         #ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 24px; pointer-events: none; text-align: center; text-shadow: 2px 2px #000;}
         #timer-ui { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 28px; text-shadow: 2px 2px #000;}
-        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 20; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 20; text-align: center; }
         #death-screen { background: rgba(139, 0, 0, 0.8); }
         #win-screen { background: rgba(0, 100, 0, 0.9); }
-        button { padding: 15px 30px; cursor: pointer; background: #333; color: #fff; border: 2px solid #fff; margin: 10px; font-size: 18px; font-family: inherit; }
-        button:hover { background: #555; }
+        button { padding: 15px 30px; cursor: pointer; background: #222; color: #fff; border: 2px solid #fff; font-size: 18px; }
     </style>
 </head>
 <body>
 
     <div id="auth-overlay">
-        <h1 style="font-size: 50px; color: #f00;">JS DOOM: ONLINE</h1>
+        <h1 style="color:red; font-size: 40px;">JS DOOM ONLINE</h1>
         <button id="login-btn">ВОЙТИ ЧЕРЕЗ GOOGLE</button>
-        <p>Авторизуйтесь, чтобы попасть в таблицу рекордов</p>
+        <p>Нужна авторизация для игры</p>
     </div>
 
     <div id="leaderboard">
@@ -47,25 +42,24 @@
     <div id="timer-ui">TIME: <span id="timer">00:00.00</span></div>
     <div id="ui">HP: <span id="hp">100</span>% | LVL: <span id="lvl">1</span> <span id="boss-ui" style="display:none;">| BOSS: <span id="bhp">10</span></span></div>
     
-    <div id="death-screen" class="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="resetGame()">РЕСТАРТ (R)</button></div>
+    <div id="death-screen" class="overlay"><h1>ТЫ ПОГИБ</h1><button onclick="location.reload()">РЕСТАРТ</button></div>
     <div id="win-screen" class="overlay">
-        <h1 style="color: #ffd700;">МИССИЯ ВЫПОЛНЕНА!</h1>
-        <p>ТВОЕ ВРЕМЯ: <span id="final-time"></span></p>
-        <button onclick="resetGame()">ИГРАТЬ СНОВА</button>
+        <h1 style="color: #ffd700;">ПОБЕДА!</h1>
+        <p>ВРЕМЯ: <span id="final-time"></span></p>
+        <button onclick="location.reload()">ИГРАТЬ СНОВА</button>
     </div>
 
     <canvas id="game"></canvas>
 
 <script>
-// --- КОНФИГУРАЦИЯ FIREBASE ---
+// --- КОНФИГУРАЦИЯ ---
 const firebaseConfig = {
     apiKey: "AIzaSyApp_aGExfiyGN8-gaz9LrpcElo0eH2qog",
     authDomain: "doooooooooom-c6131.firebaseapp.com",
     projectId: "doooooooooom-c6131",
     storageBucket: "doooooooooom-c6131.firebasestorage.app",
     messagingSenderId: "444272360243",
-    appId: "1:444272360243:web:07890e04d15631e9e1dc46",
-    measurementId: "G-W7FM27DQB6"
+    appId: "1:444272360243:web:07890e04d15631e9e1dc46"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -74,25 +68,28 @@ const db = firebase.firestore();
 const provider = new firebase.auth.GoogleAuthProvider();
 
 let currentUser = null;
+let gameActive = false;
 
-// Вход
-document.getElementById('login-btn').onclick = () => {
-    auth.signInWithPopup(provider).then(result => {
-        currentUser = result.user;
-        document.getElementById('auth-overlay').style.display = 'none';
-        loadLeaderboard();
-        initLevel(0);
-    }).catch(e => {
-        console.error(e);
-        alert("Ошибка входа! Попробуйте запустить через Live Server.");
+// Логика входа для GitHub Pages
+document.getElementById('login-btn').onclick = () => auth.signInWithRedirect(provider);
+
+auth.getRedirectResult().then(() => {
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('auth-overlay').style.display = 'none';
+            loadLeaderboard();
+            initLevel(0);
+            if(!gameActive) { gameActive = true; update(); }
+        }
     });
-};
+});
 
 async function saveScore(timeMs, timeStr) {
     if (!currentUser) return;
     try {
         await db.collection("leaderboard").add({
-            name: currentUser.displayName || "Anonymous",
+            name: currentUser.displayName || "Slayer",
             timeMs: timeMs,
             timeStr: timeStr,
             date: Date.now()
@@ -103,31 +100,27 @@ async function saveScore(timeMs, timeStr) {
 
 async function loadLeaderboard() {
     const list = document.getElementById('scores-list');
-    try {
-        const snapshot = await db.collection("leaderboard").orderBy("timeMs", "asc").limit(5).get();
-        list.innerHTML = snapshot.docs.map((doc, i) => 
-            `<div>${i+1}. ${doc.data().name.split(' ')[0]} - ${doc.data().timeStr}</div>`
-        ).join('');
-    } catch (e) { list.innerHTML = "Ошибка загрузки"; }
+    const snapshot = await db.collection("leaderboard").orderBy("timeMs", "asc").limit(5).get();
+    list.innerHTML = snapshot.docs.map((doc, i) => `<div>${i+1}. ${doc.data().name.split(' ')[0]} - ${doc.data().timeStr}</div>`).join('');
 }
 
-// --- ДВИЖОК ИГРЫ ---
+// --- ДВИЖОК ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const wallTexture = new Image();
+wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
+
 const levels = [
     [[1,1,1,1,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,3,1],[1,1,1,1,1]],
     [[1,1,1,1,1,1],[1,0,0,0,0,1],[1,0,1,1,0,1],[1,0,0,3,0,1],[1,1,1,1,1,1]],
     [[1,1,1,1,1,1,1],[1,0,1,0,1,0,1],[1,0,0,0,0,0,1],[1,1,0,1,3,1,1],[1,1,1,1,1,1,1]],
     [[1,1,1,1,1,1,1,1],[1,0,2,0,2,0,0,1],[1,0,0,0,0,0,0,1],[1,0,2,0,3,0,2,1],[1,1,1,1,1,1,1,1]],
-    [[1,1,1,1,1,1,1],[1,0,0,0,0,0,1],[1,2,0,2,2,2,1],[1,3,0,0,0,0,1],[1,2,0,2,2,2,1],[1,0,0,0,0,0,1],[1,1,1,1,1,1,1]], // LVL 7
-    [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]] // Boss
+    [[1,1,1,1,1,1,1],[1,0,0,0,0,0,1],[1,2,0,2,2,2,1],[1,3,0,0,0,0,1],[1,2,0,2,2,2,1],[1,0,0,0,0,0,1],[1,1,1,1,1,1,1]],
+    [[1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1]]
 ];
 
 let currentLevel = 0, map = [], player = { x: 96, y: 96, dir: 0, z: 0, vY: 0, hp: 100, alive: false, lookOffset: 0, isFiring: false };
-let enemies = [], keys = {}, startTime = 0, gameRunning = false;
-
-const wallTexture = new Image();
-wallTexture.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AMXDA0SNT86OAAAAYVJREFUeNrtm0FuwyAQRee66K6H6K6H6K4r96pS98geooByf90YAsSOf8YfAt9vMBjsi6L4vK7r908AAMYFAAAfAAB8AABOInp6mR068W9E9ExEv68A6Hmeu67rv9/v9y06eZ6v+YyZfVfA6/V6v91uP6IowvV6fXNEn0v6XNLnkj6X9LmkzyV9Lum/DQC9Xq/P6/X6mYm6S9olXfK6O78C0Ol0+pmiKKZpml/O6XQ6/U7T9DZN0zxN0/uS9LmkzyV9Lun76wDY7/f7uq7fUkoTET0zUXf9H89XALrdbr/jOM455zXnvE7T9O6IPpf0uaTPJX0u6XNJn0v6XNLnkj6X9N8GgGEYfhzH8S+l9I2Inu76P56vAAghfL9er59SSl8pZXp3RJ9L+lzS55I+l/S5pM8lfS7pc0mfS/rXv7CmaZ67rus/X8NTSmOaprcl6XNJn0v6XNLnkj6X9LmkzyV9Lun7688AXdf1n6Zp7o7Yv3B8AAB8AADwAQDABwAAfAAAfgIA/OQPAAD//wMAV9XisW0fT9sAAAAASUVORK5CYII=";
+let enemies = [], keys = {}, startTime = 0, renderOffset = 0;
 
 function spawnEnemies() {
     enemies = [];
@@ -135,17 +128,12 @@ function spawnEnemies() {
     document.getElementById('boss-ui').style.display = isBoss ? 'inline' : 'none';
     let count = isBoss ? 1 : 2 + currentLevel;
     for(let i=0; i<count; i++) {
-        enemies.push({ 
-            x: 200 + Math.random()*200, y: 200 + Math.random()*200, 
-            angle: Math.random()*6, speed: isBoss ? 1.4 : 0.8, 
-            hp: isBoss ? 10 : 1, isBoss: isBoss, isVisible: false, screenX: 0
-        });
+        enemies.push({ x: 200 + Math.random()*200, y: 200 + Math.random()*200, angle: Math.random()*6, speed: isBoss ? 1.4 : 0.8, hp: isBoss ? 10 : 1, isBoss: isBoss, isVisible: false, screenX: 0 });
     }
 }
 
 function initLevel(n) {
     if (n >= levels.length) {
-        gameRunning = false;
         const totalMs = Date.now() - startTime;
         document.getElementById('final-time').innerText = document.getElementById('timer').innerText;
         document.getElementById('win-screen').style.display = 'flex';
@@ -154,19 +142,16 @@ function initLevel(n) {
         document.exitPointerLock();
         return;
     }
-    if (n === 0) { startTime = Date.now(); gameRunning = true; }
+    if (n === 0) startTime = Date.now();
     currentLevel = n;
     map = JSON.parse(JSON.stringify(levels[currentLevel]));
     player.x = 96; player.y = 96; player.hp = 100; player.alive = true;
-    document.getElementById('death-screen').style.display = 'none';
     document.getElementById('lvl').innerText = currentLevel + 1;
     if(currentLevel === levels.length - 1) document.getElementById('bhp').innerText = "10";
     spawnEnemies();
 }
 
-function resetGame() { initLevel(0); }
-
-window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetGame(); };
+window.onkeydown = (e) => keys[e.code] = true;
 window.onkeyup = (e) => keys[e.code] = false;
 canvas.onclick = () => { if(player.alive) canvas.requestPointerLock(); };
 
@@ -179,14 +164,13 @@ document.onmousemove = (e) => {
 
 window.onmousedown = () => {
     if(!player.alive) return;
-    player.isFiring = true;
-    setTimeout(() => player.isFiring = false, 100);
+    player.isFiring = true; setTimeout(() => player.isFiring = false, 100);
     enemies.forEach((en, i) => {
         if(en.isVisible && Math.abs(en.screenX - canvas.width/2) < (en.isBoss ? 100 : 50)) {
             en.hp--;
             if(en.isBoss) {
                 document.getElementById('bhp').innerText = en.hp;
-                if(en.hp <= 0) map[4][8] = 3; // Портал появляется
+                if(en.hp <= 0) map[4][8] = 3;
             }
             if(en.hp <= 0) enemies.splice(i, 1);
         }
@@ -194,14 +178,12 @@ window.onmousedown = () => {
 };
 
 function update() {
-    if(!player.alive) return;
+    if(!player.alive) { requestAnimationFrame(update); return; }
     
-    // Таймер
     let diff = Date.now() - startTime;
     let m = Math.floor(diff/60000), s = Math.floor((diff%60000)/1000), ms = Math.floor((diff%1000)/10);
     document.getElementById('timer').innerText = `${m}:${s<10?'0':''}${s}.${ms<10?'0':''}${ms}`;
 
-    // Движение
     let moveX = 0, moveY = 0, speed = 2.5;
     if(keys['KeyW']){ moveX += Math.cos(player.dir)*speed; moveY += Math.sin(player.dir)*speed; }
     if(keys['KeyS']){ moveX -= Math.cos(player.dir)*speed; moveY -= Math.sin(player.dir)*speed; }
@@ -217,26 +199,24 @@ function update() {
     if(keys['Space'] && player.z === 0) player.vY = 12;
     player.z += player.vY;
     if(player.z > 0) player.vY -= 0.8; else { player.z = 0; player.vY = 0; }
-    let renderOffset = player.lookOffset + player.z;
+    renderOffset = player.lookOffset + player.z;
 
     enemies.forEach(en => {
         let ex = en.x + Math.cos(en.angle)*en.speed, ey = en.y + Math.sin(en.angle)*en.speed;
         if(map[Math.floor(ey/64)][Math.floor(ex/64)] === 0){ en.x = ex; en.y = ey; } else { en.angle += 1; }
         if(Math.sqrt((en.x-player.x)**2 + (en.y-player.y)**2) < 40){
-            player.hp -= 0.5; document.getElementById('hp').innerText = Math.ceil(player.hp);
+            player.hp -= 0.3; document.getElementById('hp').innerText = Math.ceil(player.hp);
             if(player.hp <= 0){ player.alive = false; document.getElementById('death-screen').style.display = 'flex'; document.exitPointerLock(); }
         }
     });
 
-    render(renderOffset);
+    render();
     requestAnimationFrame(update);
 }
 
-function render(renderOffset) {
+function render() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     const hH = canvas.height/2;
-
-    // Небо и пол
     ctx.fillStyle = "#87CEEB"; ctx.fillRect(0, 0, canvas.width, hH + renderOffset);
     ctx.fillStyle = '#111'; ctx.fillRect(0, hH + renderOffset, canvas.width, canvas.height);
 
@@ -245,7 +225,7 @@ function render(renderOffset) {
         let angle = (player.dir - fov/2) + (i/numRays)*fov;
         let dist = 0, hit = 0, cx = Math.cos(angle), sy = Math.sin(angle);
         while(hit === 0 && dist < 1000){
-            dist += 4;
+            dist += 2;
             let tx = Math.floor((player.x + cx*dist)/64), ty = Math.floor((player.y + sy*dist)/64);
             if(map[ty] && map[ty][tx]) hit = map[ty][tx];
         }
@@ -277,14 +257,10 @@ function render(renderOffset) {
         } else en.isVisible = false;
     });
 
-    // Оружие
     ctx.fillStyle = '#000';
     ctx.fillRect(canvas.width/2-30, canvas.height-160+(player.isFiring?20:0), 60, 180);
     ctx.strokeStyle = '#0f0'; ctx.strokeRect(canvas.width/2-10, canvas.height/2-10, 20, 20);
 }
-
-// Запуск цикла
-update();
 </script>
 </body>
 </html>
